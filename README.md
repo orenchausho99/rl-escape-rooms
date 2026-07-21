@@ -300,20 +300,3 @@ Deploy:
 5. Deploy and add the public URL to this README.
 
 No secret keys are required.
-
-## Defense Preparation
-
-Be ready to explain:
-
-1. Why Value Iteration requires a transition model.
-2. The difference between the SARSA target and Q-Learning target.
-3. How epsilon-greedy exploration and epsilon decay work.
-4. Why step penalties encourage faster solutions.
-5. Why rewards that can be collected repeatedly may create unintended loops.
-6. Why the box position and guard phase must be part of a Markov state.
-7. Why Room 4 cannot use a finite tabular Q-table.
-8. How tile coding converts continuous positions into reusable features.
-9. How the Room 5 dot product determines whether an obstacle is in front.
-10. How seed-controlled experiments make hyperparameter comparisons fair.
-
-The most important code paths are `transition_model`, `SokobanEscapeRoom.step`, `train_sarsa`, `train_q_learning`, `LinearApproxQ.features`, and `train_approx_q_learning`.
