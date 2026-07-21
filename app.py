@@ -1,0 +1,3782 @@
+from __future__ import annotations
+
+from datetime import datetime
+import html
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import streamlit as st
+import streamlit.components.v1 as components
+
+from escape_room.algorithms import (
+    moving_average,
+    run_continuous_policy,
+    train_approx_q_learning,
+    train_q_learning,
+    train_sarsa,
+    value_iteration,
+)
+from escape_room.envs import (
+    CONTINUOUS_ACTIONS,
+    ContinuousEscapeRoom,
+    DynamicObstacleRoom,
+    GridEscapeRoom,
+    GridState,
+    SokobanEscapeRoom,
+    continuous_room_config,
+    obstacle_room_config,
+    room1_config,
+    room2_config,
+    room3_config,
+)
+
+
+st.set_page_config(page_title="RL Escape Rooms", layout="wide", initial_sidebar_state="collapsed")
+
+
+ROOM_ORDER = ["dp", "sarsa", "q_learning", "approx", "obstacles"]
+ACTION_LABELS = ("Up", "Right", "Down", "Left")
+
+TUNED_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "dp": {"gamma": 0.96, "slip": 0.25, "theta": 1e-4, "max_iterations": 1000, "max_steps": 220},
+    "sarsa": {"episodes": 650, "max_steps": 250, "alpha": 0.15, "gamma": 0.96, "epsilon": 0.40, "epsilon_min": 0.03, "epsilon_decay": 0.993, "slip": 0.18},
+    "q_learning": {"episodes": 650, "max_steps": 850, "alpha": 0.15, "gamma": 0.96, "epsilon": 0.40, "epsilon_min": 0.03, "epsilon_decay": 0.993, "slip": 0.18},
+    "approx": {"episodes": 450, "max_steps": 850, "alpha": 0.08, "gamma": 0.985, "epsilon": 0.40, "epsilon_min": 0.03, "epsilon_decay": 0.993},
+    "obstacles": {"episodes": 450, "max_steps": 1400, "alpha": 0.08, "gamma": 0.985, "epsilon": 0.40, "epsilon_min": 0.03, "epsilon_decay": 0.993, "obstacle_count": 7, "observation_range": 3.0},
+}
+
+ROOM_THEMES: Dict[str, Dict[str, Any]] = {
+    "dp": {
+        "menu": "1. Pac-Man Ice Maze",
+        "title": "Pac-Man Ice Maze",
+        "subtitle": "Classic Pac-Man maze adapted to slippery tiles",
+        "algorithm": "Dynamic Programming",
+        "inspiration": "Inspired by Pac-Man",
+        "art": "pacman-ice-arena.webp",
+        "mission": "Reach EXIT quickly, avoid moving ghosts and cracks, and handle slippery ice. The complete transition model is known to Value Iteration.",
+        "agent": "PAC",
+        "goal": "EXIT",
+        "state": "(row, col, collected_mask, ghost_phase)",
+        "accent": "#38bdf8",
+        "agent_color": "#facc15",
+        "wall": "#1e3a8a",
+        "floor": "#07111f",
+        "path": "#123765",
+        "danger": "#ef4444",
+        "key": "#facc15",
+        "portal": "#a855f7",
+        "labels": {"start": "PAC", "goal": "EXIT", "trap": "GHOST", "ice": "ICE", "bonus": "PWR"},
+        "objectives": ["Reach EXIT", "Avoid moving ghosts", "Handle slippery ice"],
+    },
+    "sarsa": {
+        "menu": "2. Sokoban Vault",
+        "title": "Sokoban Vault",
+        "subtitle": "Classic crate-pushing puzzle with SARSA",
+        "algorithm": "SARSA",
+        "inspiration": "Inspired by Sokoban",
+        "art": "sokoban-vault-arena.webp",
+        "mission": "Push the BOX onto the target tile, avoid lasers, then enter SAFE. SARSA learns from its actual exploratory moves.",
+        "agent": "PUSH",
+        "goal": "SAFE",
+        "state": "(player_row, player_col, box_row, box_col)",
+        "accent": "#a78bfa",
+        "agent_color": "#facc15",
+        "wall": "#312e81",
+        "floor": "#100b24",
+        "path": "#2e2363",
+        "danger": "#fb7185",
+        "key": "#fde047",
+        "portal": "#a855f7",
+        "labels": {"start": "PUSH", "goal": "SAFE", "trap": "LAS", "ice": "OIL", "bonus": "COIN", "key": "BOX"},
+        "objectives": ["Push BOX to target", "Open SAFE", "Learn on-policy"],
+    },
+    "q_learning": {
+        "menu": "3. Bomberman Reactor",
+        "title": "Bomberman Reactor",
+        "subtitle": "Bomberman-style grid with bombs and warp tunnels",
+        "algorithm": "Q-Learning",
+        "inspiration": "Inspired by Bomberman",
+        "art": "bomberman-reactor-arena.webp",
+        "mission": "Collect two CORE items, avoid bomb blasts and patrol bots, use WARP tunnels, then escape through GATE.",
+        "agent": "BOMB",
+        "goal": "GATE",
+        "state": "(row, col, collected_cores, guard_phase)",
+        "accent": "#2dd4bf",
+        "agent_color": "#facc15",
+        "wall": "#134e4a",
+        "floor": "#041411",
+        "path": "#123d37",
+        "danger": "#f97316",
+        "key": "#fde047",
+        "portal": "#c084fc",
+        "labels": {"start": "START", "goal": "GATE", "trap": "BOMB", "ice": "SLIME", "bonus": "CHG", "key": "CORE", "portal": "WARP", "guard": "BOT"},
+        "objectives": ["Collect 2 COREs", "Avoid bombs", "Use WARP"],
+    },
+    "approx": {
+        "menu": "4. Lunar Lander Pad",
+        "title": "Lunar Lander Pad",
+        "subtitle": "Atari Lunar Lander-style continuous landing",
+        "algorithm": "Approximate Q-Learning",
+        "inspiration": "Inspired by Lunar Lander",
+        "art": "lunar-lander-arena.webp",
+        "mission": "Choose a discrete velocity every 0.02 seconds and guide the lander across a continuous 10x10 meter room to PAD.",
+        "agent": "LANDER",
+        "goal": "PAD",
+        "state": "X, Y, Vx, Vy",
+        "accent": "#60a5fa",
+        "agent_color": "#facc15",
+        "wall": "#1d4ed8",
+        "floor": "#061323",
+        "path": "#1d3557",
+        "danger": "#ef4444",
+        "key": "#fde047",
+        "portal": "#a855f7",
+        "objectives": ["Choose velocity", "Minimize time", "Touch down on PAD"],
+    },
+    "obstacles": {
+        "menu": "5. Portal Hazard Run",
+        "title": "Portal Hazard Run",
+        "subtitle": "Moving portal hazards with local forward observation",
+        "algorithm": "Approximate Q-Learning",
+        "inspiration": "Inspired by Portal",
+        "art": "portal-arena.webp",
+        "mission": "Avoid moving portal hazards and reach EXIT. The agent observes only the nearest portal within X meters in front of it.",
+        "agent": "PORTAL",
+        "goal": "EXIT",
+        "state": "X, Y, Vx, Vy, obstacle_dx, obstacle_dy, visible",
+        "accent": "#fb923c",
+        "agent_color": "#facc15",
+        "wall": "#7c2d12",
+        "floor": "#170d05",
+        "path": "#4a250c",
+        "danger": "#dc2626",
+        "key": "#fde047",
+        "portal": "#a855f7",
+        "objectives": ["Observe forward", "Avoid moving portals", "Reach EXIT"],
+    },
+}
+
+ROOMS = {ROOM_THEMES[kind]["menu"]: kind for kind in ROOM_ORDER}
+
+
+def css() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+            --bg: #07111f;
+            --panel: #0b1220;
+            --panel2: #111827;
+            --text: #e5edf7;
+            --muted: #9ca3af;
+            --line: #263244;
+        }
+        .stApp {
+            background:
+                radial-gradient(circle at 8% 8%, rgba(59, 130, 246, .16), transparent 28%),
+                radial-gradient(circle at 92% 8%, rgba(45, 212, 191, .12), transparent 26%),
+                linear-gradient(180deg, #050914 0%, #0b1220 45%, #111827 100%);
+            color: var(--text);
+        }
+        header[data-testid="stHeader"],
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        #MainMenu,
+        footer {
+            visibility: hidden;
+            height: 0;
+        }
+        .stDeployButton {
+            display: none;
+        }
+        .block-container {
+            padding-top: .35rem;
+            padding-bottom: 2rem;
+            max-width: 1380px;
+        }
+        [data-testid="stSidebar"] {
+            background: #08111f;
+            border-left: 1px solid #1f2937;
+        }
+        h1, h2, h3, p, label, span {
+            letter-spacing: 0;
+        }
+        .topbar {
+            border: 1px solid #1f2a3a;
+            background:
+                linear-gradient(135deg, rgba(56,189,248,.14), transparent 38%),
+                linear-gradient(90deg, rgba(8, 17, 31, .98), rgba(4, 47, 46, .92));
+            border-radius: 16px;
+            padding: 18px 22px;
+            margin-bottom: 16px;
+            box-shadow: 0 18px 48px rgba(0, 0, 0, .24);
+        }
+        .topbar-inner {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 16px;
+            align-items: center;
+        }
+        .topbar h1 {
+            margin: 0;
+            color: #f8fafc;
+            font-size: 2.05rem;
+            font-weight: 900;
+        }
+        .topbar p {
+            margin: 7px 0 0 0;
+            color: #cbd5e1;
+            font-size: .98rem;
+        }
+        .topbar-badges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .topbar-badge {
+            border: 1px solid #334155;
+            background: rgba(255,255,255,.06);
+            border-radius: 999px;
+            padding: 7px 11px;
+            color: #e2e8f0;
+            font-weight: 900;
+            font-size: .82rem;
+            white-space: nowrap;
+        }
+        .topbar-badge.active {
+            border-color: #38bdf8;
+            color: #bae6fd;
+            box-shadow: 0 0 16px rgba(56,189,248,.18);
+        }
+        div[data-testid="stTabs"] {
+            border: 1px solid #263244;
+            background: rgba(8, 17, 31, .72);
+            border-radius: 14px;
+            padding: 8px 10px 12px 10px;
+            margin-top: 8px;
+        }
+        div[data-testid="stTabs"] [role="tablist"] {
+            gap: 8px;
+            border-bottom: 1px solid #263244;
+            padding-bottom: 8px;
+        }
+        div[data-testid="stTabs"] button[role="tab"] {
+            min-height: 42px;
+            border-radius: 10px;
+            border: 1px solid #334155;
+            background: #111827;
+            color: #e5e7eb !important;
+            font-weight: 900;
+            padding: 0 16px;
+            opacity: 1 !important;
+        }
+        div[data-testid="stTabs"] button[role="tab"] * {
+            color: #e5e7eb !important;
+            font-weight: 900;
+            opacity: 1 !important;
+        }
+        div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+            border-color: #38bdf8;
+            background: linear-gradient(135deg, #1d4ed8, #0f172a);
+            color: #ffffff !important;
+            box-shadow: 0 0 16px rgba(56, 189, 248, .32);
+        }
+        div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] * {
+            color: #ffffff !important;
+        }
+        .game-card {
+            --accent: #38bdf8;
+            border: 1px solid #263244;
+            background: linear-gradient(135deg, rgba(15, 23, 42, .96), rgba(17, 24, 39, .90));
+            border-radius: 14px;
+            padding: 16px 18px;
+            margin-bottom: 14px;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,.03), 0 18px 44px rgba(0,0,0,.24);
+        }
+        .game-card h2 {
+            color: #f8fafc;
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        .game-card .sub {
+            color: var(--accent);
+            font-weight: 900;
+            margin-top: 3px;
+        }
+        .game-card .mission {
+            color: #cbd5e1;
+            margin-top: 9px;
+            line-height: 1.5;
+        }
+        .objective-row {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .objective {
+            border: 1px solid #263244;
+            background: rgba(255,255,255,.04);
+            border-radius: 8px;
+            padding: 9px 11px;
+            color: #e5e7eb;
+            font-weight: 800;
+        }
+        .hud {
+            --accent: #38bdf8;
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 10px;
+            margin: 10px 0 12px 0;
+        }
+        .hud-card {
+            border: 1px solid #263244;
+            background: rgba(8, 17, 31, .94);
+            border-radius: 10px;
+            padding: 10px 12px;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
+        }
+        .hud-label {
+            color: #94a3b8;
+            font-size: .76rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+        .hud-value {
+            color: #f8fafc;
+            font-size: 1.06rem;
+            font-weight: 900;
+            margin-top: 3px;
+        }
+        .hud-card.highlight .hud-value {
+            color: var(--accent);
+        }
+        .arcade-shell {
+            --accent: #38bdf8;
+            --wall: #1e3a8a;
+            --floor: #07111f;
+            --path: #123765;
+            --danger: #ef4444;
+            --key: #facc15;
+            --portal: #a855f7;
+            --agent: #facc15;
+            direction: ltr;
+            width: min(100%, 650px);
+            margin: 0 auto;
+            border-radius: 18px;
+            padding: 16px;
+            border: 2px solid var(--accent);
+            background: #020617;
+            box-shadow: 0 0 0 4px rgba(255,255,255,.03), 0 0 28px color-mix(in srgb, var(--accent), transparent 55%);
+        }
+        .arcade-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #f8fafc;
+            font-weight: 900;
+            margin-bottom: 10px;
+            font-size: .88rem;
+        }
+        .maze {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 4px;
+            background: #020617;
+        }
+        .tile {
+            position: relative;
+            aspect-ratio: 1 / 1;
+            border-radius: 7px;
+            background: var(--floor);
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .12);
+            overflow: hidden;
+        }
+        .tile::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 6px;
+            height: 6px;
+            margin-left: -3px;
+            margin-top: -3px;
+            border-radius: 999px;
+            background: rgba(248, 250, 252, .58);
+            box-shadow: 0 0 8px rgba(248,250,252,.35);
+        }
+        .tile.visited { background: var(--path); }
+        .tile.wall {
+            background: linear-gradient(135deg, var(--wall), #172554);
+            box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent), white 10%), 0 0 12px color-mix(in srgb, var(--accent), transparent 75%);
+        }
+        .tile.wall::after, .tile.agent::after, .tile.goal::after, .tile.key::after,
+        .tile.trap::after, .tile.slippery::after, .tile.portal::after, .tile.guard::after,
+        .tile.bonus::after {
+            display: none;
+        }
+        .tile.slippery {
+            background: repeating-linear-gradient(135deg, #bae6fd 0 6px, #e0f2fe 6px 12px);
+        }
+        .tile.trap {
+            background: #1f2937;
+        }
+        .tile.trap::before {
+            content: "";
+            position: absolute;
+            left: 8%;
+            right: 8%;
+            top: 45%;
+            height: 5px;
+            background: var(--danger);
+            border-radius: 999px;
+            box-shadow: 0 0 12px var(--danger);
+            transform: rotate(-32deg);
+        }
+        .tile.goal {
+            background: radial-gradient(circle, #22c55e, #065f46);
+            box-shadow: 0 0 16px rgba(34,197,94,.6), inset 0 0 0 2px #bbf7d0;
+        }
+        .tile.goal .label, .tile.key .label, .tile.portal .label, .tile.bonus .label,
+        .tile.guard .label, .tile.start .label {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #f8fafc;
+            font-size: clamp(8px, 1vw, 12px);
+            font-weight: 900;
+            text-align: center;
+        }
+        .tile.key {
+            background: radial-gradient(circle, var(--key), #a16207);
+            box-shadow: 0 0 16px rgba(250,204,21,.55);
+        }
+        .tile.key .label { color: #111827; }
+        .tile.portal {
+            background: conic-gradient(from 0deg, #4c1d95, var(--portal), #22d3ee, #4c1d95);
+            box-shadow: 0 0 18px rgba(168,85,247,.55);
+        }
+        .tile.guard {
+            background: #7c2d12;
+            box-shadow: 0 0 16px rgba(249,115,22,.55);
+        }
+        .tile.guard .label { color: #fed7aa; }
+        .tile.bonus {
+            background: radial-gradient(circle, #fef3c7, #f59e0b);
+        }
+        .tile.bonus .label { color: #111827; }
+        .tile.start {
+            background: #111827;
+            box-shadow: inset 0 0 0 2px rgba(148,163,184,.45);
+        }
+        .tile.agent {
+            background: var(--floor);
+        }
+        .pac {
+            position: absolute;
+            inset: 14%;
+            border-radius: 999px;
+            background: conic-gradient(from 35deg, transparent 0 70deg, var(--agent) 70deg 360deg);
+            filter: drop-shadow(0 0 9px rgba(250,204,21,.65));
+            animation: chomp .42s linear infinite alternate;
+        }
+        @keyframes chomp {
+            from { clip-path: polygon(100% 50%, 100% 50%, 100% 50%, 100% 50%, 100% 50%, 50% 50%, 0 0, 0 100%); }
+            to { clip-path: polygon(100% 25%, 100% 25%, 100% 75%, 100% 75%, 100% 75%, 50% 50%, 0 0, 0 100%); }
+        }
+        .label {
+            letter-spacing: 0;
+        }
+        .arena {
+            --accent: #60a5fa;
+            --floor: #061323;
+            --danger: #ef4444;
+            --agent: #facc15;
+            position: relative;
+            width: min(100%, 650px);
+            aspect-ratio: 1 / 1;
+            margin: 0 auto;
+            border-radius: 18px;
+            border: 2px solid var(--accent);
+            overflow: hidden;
+            background:
+                linear-gradient(rgba(148,163,184,.12) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148,163,184,.12) 1px, transparent 1px),
+                var(--floor);
+            background-size: 10% 10%;
+            box-shadow: 0 0 28px color-mix(in srgb, var(--accent), transparent 55%);
+        }
+        .arena-path {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.7);
+            box-shadow: 0 0 9px var(--accent);
+        }
+        .arena-hazard {
+            position: absolute;
+            border-radius: 8px;
+            background: rgba(239, 68, 68, .42);
+            border: 1px solid rgba(248,113,113,.75);
+            box-shadow: 0 0 18px rgba(239,68,68,.45);
+        }
+        .arena-obstacle {
+            position: absolute;
+            border-radius: 6px;
+            background: #f97316;
+            border: 2px solid #fed7aa;
+            box-shadow: 0 0 16px rgba(249,115,22,.55);
+        }
+        .arena-goal {
+            position: absolute;
+            border-radius: 999px;
+            background: rgba(34, 197, 94, .33);
+            border: 2px solid #86efac;
+            box-shadow: 0 0 22px rgba(34,197,94,.65);
+            transform: translate(-50%, -50%);
+        }
+        .arena-agent {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 999px;
+            background: var(--agent);
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 16px rgba(250,204,21,.75);
+        }
+        .control-pad {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(80px, 1fr));
+            gap: 8px;
+            max-width: 330px;
+            margin: 0 auto;
+        }
+        .small-note {
+            color: #94a3b8;
+            font-size: .9rem;
+            line-height: 1.45;
+        }
+        div.stButton > button,
+        div.stDownloadButton > button,
+        div.stFormSubmitButton > button,
+        button[data-testid="stBaseButton-secondary"],
+        button[data-testid="stBaseButton-primary"],
+        button[data-testid="stFormSubmitButton"] {
+            min-height: 44px;
+            border-radius: 10px;
+            border: 1px solid #38bdf8 !important;
+            background: linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%) !important;
+            color: #f8fafc !important;
+            font-weight: 900 !important;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, .22), 0 0 12px rgba(56, 189, 248, .22);
+        }
+        div.stButton > button *,
+        div.stDownloadButton > button *,
+        div.stFormSubmitButton > button *,
+        button[data-testid="stBaseButton-secondary"] *,
+        button[data-testid="stBaseButton-primary"] *,
+        button[data-testid="stFormSubmitButton"] * {
+            color: #f8fafc !important;
+            font-weight: 900 !important;
+            opacity: 1 !important;
+        }
+        div.stButton > button:hover,
+        div.stDownloadButton > button:hover,
+        div.stFormSubmitButton > button:hover,
+        button[data-testid="stBaseButton-secondary"]:hover,
+        button[data-testid="stBaseButton-primary"]:hover,
+        button[data-testid="stFormSubmitButton"]:hover {
+            border-color: #facc15 !important;
+            background: linear-gradient(135deg, #2563eb 0%, #172554 100%) !important;
+            color: #ffffff !important;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, .28), 0 0 18px rgba(250, 204, 21, .28);
+        }
+        div.stButton > button:focus,
+        div.stDownloadButton > button:focus,
+        div.stFormSubmitButton > button:focus,
+        button[data-testid="stBaseButton-secondary"]:focus,
+        button[data-testid="stBaseButton-primary"]:focus,
+        button[data-testid="stFormSubmitButton"]:focus {
+            outline: 3px solid rgba(250, 204, 21, .45) !important;
+            outline-offset: 2px;
+        }
+        .select-head {
+            border: 1px solid #263244;
+            background: rgba(8, 17, 31, .92);
+            border-radius: 14px;
+            padding: 18px 20px;
+            margin-bottom: 16px;
+        }
+        .select-head h2 {
+            margin: 0;
+            color: #f8fafc;
+            font-size: 1.55rem;
+        }
+        .select-head p {
+            margin: 7px 0 0 0;
+            color: #cbd5e1;
+        }
+        .room-select-card {
+            --accent: #38bdf8;
+            min-height: 230px;
+            border: 1px solid color-mix(in srgb, var(--accent), #263244 55%);
+            background:
+                linear-gradient(135deg, color-mix(in srgb, var(--accent), transparent 88%), rgba(15,23,42,.96)),
+                #0b1220;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 10px;
+            box-shadow: 0 16px 40px rgba(0,0,0,.22), inset 0 0 0 1px rgba(255,255,255,.03);
+            transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+        }
+        .room-select-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--accent);
+            box-shadow: 0 22px 50px rgba(0,0,0,.34), 0 0 22px color-mix(in srgb, var(--accent), transparent 76%);
+        }
+        .room-select-card .screen {
+            height: 124px;
+            border-radius: 12px;
+            border: 2px solid var(--accent);
+            background:
+                linear-gradient(rgba(148,163,184,.10) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148,163,184,.10) 1px, transparent 1px),
+                #020617;
+            background-size: 12.5% 25%;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 13px;
+            box-shadow: inset 0 0 34px rgba(0,0,0,.5);
+        }
+        .room-select-card .screen::before,
+        .room-select-card .screen::after {
+            position: absolute;
+        }
+        .thumb-name {
+            position: absolute;
+            z-index: 4;
+            left: 12px;
+            top: 10px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid color-mix(in srgb, var(--accent), white 30%);
+            background: rgba(2, 6, 23, .78);
+            color: #ffffff;
+            font-size: .72rem;
+            font-weight: 900;
+            letter-spacing: 0;
+            box-shadow: 0 0 16px color-mix(in srgb, var(--accent), transparent 70%);
+        }
+        .mini-wall,
+        .mini-wall::before,
+        .mini-wall::after,
+        .mini-crate,
+        .mini-target,
+        .mini-laser,
+        .mini-bomb,
+        .mini-blast,
+        .mini-meteor,
+        .mini-pad,
+        .mini-portal,
+        .mini-route {
+            position: absolute;
+        }
+        .mini-wall {
+            border-radius: 7px;
+            background: color-mix(in srgb, var(--accent), #0f172a 58%);
+            border: 2px solid color-mix(in srgb, var(--accent), white 15%);
+            box-shadow: 0 0 18px color-mix(in srgb, var(--accent), transparent 70%);
+        }
+        .mini-pellet {
+            position: absolute;
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            background: #f8fafc;
+            box-shadow: 0 0 10px rgba(248,250,252,.75);
+        }
+        .mini-pac {
+            position: absolute;
+            width: 31px;
+            height: 31px;
+            border-radius: 999px;
+            background: conic-gradient(from 34deg, transparent 0 70deg, #facc15 70deg 360deg);
+            filter: drop-shadow(0 0 12px rgba(250,204,21,.8));
+        }
+        .mini-ghost {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border-radius: 16px 16px 7px 7px;
+            background: #fb7185;
+            box-shadow: 0 0 16px rgba(251,113,133,.68);
+        }
+        .mini-ghost::before {
+            content: "";
+            position: absolute;
+            left: 7px;
+            top: 8px;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 12px 0 #fff;
+        }
+        .mini-ghost::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -1px;
+            height: 8px;
+            background: repeating-linear-gradient(90deg, #fb7185 0 7px, transparent 7px 13px);
+        }
+        .preview-dp .w1 { left: 14%; top: 31%; width: 62%; height: 13px; }
+        .preview-dp .w2 { left: 14%; top: 56%; width: 44%; height: 13px; }
+        .preview-dp .w3 { right: 11%; top: 19%; width: 12px; height: 61%; }
+        .preview-dp .p1 { left: 18%; top: 73%; }
+        .preview-dp .p2 { left: 31%; top: 73%; }
+        .preview-dp .p3 { left: 45%; top: 73%; }
+        .preview-dp .p4 { left: 59%; top: 73%; }
+        .preview-dp .mini-pac { left: 22%; top: 39%; }
+        .preview-dp .mini-ghost { right: 18%; top: 54%; }
+
+        .preview-sarsa {
+            background:
+                linear-gradient(rgba(233,213,255,.10) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(233,213,255,.10) 1px, transparent 1px),
+                #130d25;
+            background-size: 12.5% 25%;
+        }
+        .mini-crate {
+            width: 34px;
+            height: 34px;
+            border-radius: 6px;
+            background:
+                linear-gradient(45deg, transparent 44%, rgba(120,53,15,.75) 45% 55%, transparent 56%),
+                linear-gradient(-45deg, transparent 44%, rgba(120,53,15,.75) 45% 55%, transparent 56%),
+                #d97706;
+            border: 2px solid #fde68a;
+            box-shadow: 0 0 18px rgba(251,191,36,.42);
+        }
+        .mini-target {
+            width: 42px;
+            height: 42px;
+            border-radius: 9px;
+            border: 3px dashed #86efac;
+            background: rgba(34,197,94,.12);
+            box-shadow: 0 0 18px rgba(134,239,172,.35);
+        }
+        .mini-player {
+            position: absolute;
+            width: 26px;
+            height: 34px;
+            border-radius: 12px 12px 8px 8px;
+            background: #facc15;
+            border: 2px solid #111827;
+            box-shadow: 0 0 14px rgba(250,204,21,.55);
+        }
+        .mini-player::before {
+            content: "";
+            position: absolute;
+            left: 4px;
+            top: 5px;
+            width: 16px;
+            height: 5px;
+            border-radius: 999px;
+            background: #111827;
+        }
+        .mini-laser {
+            height: 4px;
+            border-radius: 999px;
+            background: #fb7185;
+            box-shadow: 0 0 14px rgba(251,113,133,.75);
+            transform: rotate(-8deg);
+        }
+        .preview-sarsa .mini-crate { left: 37%; top: 43%; }
+        .preview-sarsa .mini-target { right: 13%; top: 38%; }
+        .preview-sarsa .mini-player { left: 18%; top: 42%; }
+        .preview-sarsa .l1 { left: 20%; right: 14%; top: 29%; }
+        .preview-sarsa .l2 { left: 12%; right: 24%; top: 73%; transform: rotate(5deg); }
+
+        .preview-q_learning {
+            background:
+                radial-gradient(circle at 72% 32%, rgba(249,115,22,.22), transparent 12%),
+                linear-gradient(rgba(45,212,191,.10) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(45,212,191,.10) 1px, transparent 1px),
+                #041411;
+            background-size: auto, 12.5% 25%, 12.5% 25%;
+        }
+        .mini-bomber {
+            position: absolute;
+            width: 31px;
+            height: 31px;
+            border-radius: 999px;
+            background: #facc15;
+            border: 3px solid #0f172a;
+            box-shadow: 0 0 14px rgba(250,204,21,.65);
+        }
+        .mini-bomber::before {
+            content: "";
+            position: absolute;
+            left: 5px;
+            top: 7px;
+            width: 15px;
+            height: 5px;
+            background: #0f172a;
+            box-shadow: 0 9px #0f172a;
+        }
+        .mini-bomb {
+            width: 27px;
+            height: 27px;
+            border-radius: 999px;
+            background: #111827;
+            border: 2px solid #fed7aa;
+            box-shadow: 0 0 16px rgba(249,115,22,.8);
+        }
+        .mini-bomb::before {
+            content: "";
+            position: absolute;
+            right: -6px;
+            top: -7px;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: #f97316;
+        }
+        .mini-blast {
+            width: 76px;
+            height: 9px;
+            border-radius: 999px;
+            background: #fb923c;
+            box-shadow: 0 0 16px rgba(251,146,60,.75);
+        }
+        .mini-blast::before {
+            content: "";
+            position: absolute;
+            left: 34px;
+            top: -31px;
+            width: 9px;
+            height: 72px;
+            border-radius: 999px;
+            background: #fb923c;
+        }
+        .preview-q_learning .w1 { left: 19%; top: 27%; width: 13px; height: 56%; }
+        .preview-q_learning .w2 { left: 52%; top: 18%; width: 13px; height: 65%; }
+        .preview-q_learning .mini-bomber { left: 25%; top: 51%; }
+        .preview-q_learning .mini-bomb { right: 20%; top: 38%; }
+        .preview-q_learning .mini-blast { right: 12%; top: 62%; }
+
+        .preview-approx {
+            background:
+                radial-gradient(circle at 20% 22%, rgba(248,250,252,.65) 0 2px, transparent 3px),
+                radial-gradient(circle at 69% 18%, rgba(248,250,252,.55) 0 2px, transparent 3px),
+                radial-gradient(circle at 42% 43%, rgba(248,250,252,.45) 0 1px, transparent 2px),
+                linear-gradient(180deg, #020617 0%, #10223d 100%);
+        }
+        .mini-lander {
+            position: absolute;
+            left: 30%;
+            top: 20%;
+            width: 52px;
+            height: 44px;
+        }
+        .mini-lander::before {
+            content: "";
+            position: absolute;
+            left: 13px;
+            top: 0;
+            width: 26px;
+            height: 30px;
+            clip-path: polygon(50% 0, 100% 100%, 0 100%);
+            background: #e0f2fe;
+            border: 2px solid #60a5fa;
+            filter: drop-shadow(0 0 12px rgba(96,165,250,.65));
+        }
+        .mini-lander::after {
+            content: "";
+            position: absolute;
+            left: 20px;
+            top: 31px;
+            width: 12px;
+            height: 21px;
+            clip-path: polygon(50% 100%, 0 0, 100% 0);
+            background: #fb923c;
+            filter: drop-shadow(0 0 12px rgba(251,146,60,.8));
+        }
+        .mini-pad {
+            right: 14%;
+            bottom: 17%;
+            width: 86px;
+            height: 12px;
+            border-radius: 999px;
+            background: #86efac;
+            box-shadow: 0 0 18px rgba(134,239,172,.65);
+        }
+        .mini-moon {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 34px;
+            background: linear-gradient(135deg, #475569, #94a3b8);
+            clip-path: polygon(0 65%, 11% 43%, 24% 61%, 36% 28%, 51% 64%, 65% 35%, 80% 58%, 100% 34%, 100% 100%, 0 100%);
+        }
+        .mini-meteor {
+            right: 33%;
+            top: 28%;
+            width: 24px;
+            height: 24px;
+            border-radius: 999px;
+            background: #ef4444;
+            box-shadow: -17px 10px 0 rgba(239,68,68,.35), 0 0 16px rgba(239,68,68,.75);
+        }
+
+        .preview-obstacles {
+            background:
+                radial-gradient(circle at 25% 33%, rgba(34,211,238,.22), transparent 13%),
+                radial-gradient(circle at 70% 60%, rgba(168,85,247,.24), transparent 16%),
+                linear-gradient(135deg, #170d05 0%, #261044 100%);
+        }
+        .mini-portal {
+            width: 58px;
+            height: 58px;
+            border-radius: 999px;
+            border: 5px solid #22d3ee;
+            box-shadow: 0 0 22px rgba(34,211,238,.75), inset 0 0 18px rgba(168,85,247,.55);
+        }
+        .mini-portal.purple {
+            border-color: #f0abfc;
+            box-shadow: 0 0 22px rgba(240,171,252,.75), inset 0 0 18px rgba(34,211,238,.55);
+        }
+        .mini-runner {
+            position: absolute;
+            left: 46%;
+            top: 47%;
+            width: 25px;
+            height: 35px;
+        }
+        .mini-runner::before {
+            content: "";
+            position: absolute;
+            left: 7px;
+            top: 0;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #facc15;
+            box-shadow: 0 0 12px rgba(250,204,21,.7);
+        }
+        .mini-runner::after {
+            content: "";
+            position: absolute;
+            left: 11px;
+            top: 13px;
+            width: 4px;
+            height: 23px;
+            border-radius: 999px;
+            background: #facc15;
+            box-shadow: -9px 8px 0 -1px #facc15, 10px 9px 0 -1px #facc15;
+        }
+        .mini-route {
+            left: 25%;
+            right: 24%;
+            top: 58%;
+            height: 3px;
+            border-top: 3px dashed #fed7aa;
+            transform: rotate(-10deg);
+            opacity: .85;
+        }
+        .preview-obstacles .portal-a { left: 16%; top: 32%; }
+        .preview-obstacles .portal-b { right: 14%; top: 30%; }
+        }
+        .room-select-card h3 {
+            color: #f8fafc;
+            font-size: 1.1rem;
+            margin: 0;
+        }
+        .room-select-card .classic {
+            display: inline-block;
+            margin-top: 7px;
+            padding: 4px 8px;
+            border: 1px solid color-mix(in srgb, var(--accent), #263244 45%);
+            border-radius: 999px;
+            background: rgba(255,255,255,.05);
+            color: #e2e8f0;
+            font-size: .75rem;
+            font-weight: 900;
+        }
+        .room-select-card .algo {
+            color: var(--accent);
+            font-size: .88rem;
+            font-weight: 900;
+            margin-top: 7px;
+        }
+        .room-select-card p {
+            color: #cbd5e1;
+            font-size: .9rem;
+            line-height: 1.45;
+            margin: 9px 0 0 0;
+        }
+        .room-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            border: 1px solid #263244;
+            background: rgba(8, 17, 31, .9);
+            border-radius: 12px;
+            padding: 12px 14px;
+            margin-bottom: 14px;
+        }
+        .room-nav .current {
+            color: #f8fafc;
+            font-weight: 900;
+        }
+        .room-nav .hint {
+            color: #94a3b8;
+            font-size: .9rem;
+        }
+        div[data-testid="stTabs"] button {
+            font-weight: 900;
+        }
+        [data-testid="stWidgetLabel"] {
+            margin-bottom: 6px;
+        }
+        [data-testid="stWidgetLabel"] p,
+        [data-testid="stWidgetLabel"] label,
+        [data-testid="stWidgetLabel"] span {
+            color: #f8fafc !important;
+            font-weight: 900 !important;
+            font-size: .96rem !important;
+            opacity: 1 !important;
+        }
+        [data-testid="stForm"] {
+            border: 1px solid #263244;
+            background: rgba(8, 17, 31, .72);
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
+        }
+        .train-guide {
+            border: 1px solid #263244;
+            background:
+                linear-gradient(135deg, rgba(56,189,248,.10), transparent 46%),
+                rgba(8, 17, 31, .88);
+            border-radius: 14px;
+            padding: 16px;
+            margin: 10px 0 16px 0;
+        }
+        .train-guide h3 {
+            margin: 0 0 8px 0;
+            color: #f8fafc;
+            font-size: 1.2rem;
+        }
+        .train-guide p {
+            margin: 0;
+            color: #cbd5e1;
+            line-height: 1.45;
+        }
+        .param-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .param-card {
+            border: 1px solid #334155;
+            background: rgba(255,255,255,.045);
+            border-radius: 10px;
+            padding: 10px 11px;
+            color: #dbeafe;
+            min-height: 84px;
+        }
+        .param-card b {
+            display: block;
+            color: #ffffff;
+            margin-bottom: 4px;
+            font-size: .93rem;
+        }
+        .param-card span {
+            color: #cbd5e1 !important;
+            font-size: .84rem;
+            line-height: 1.35;
+        }
+        .form-section {
+            margin: 0 0 10px 0;
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px solid #334155;
+            background: rgba(255,255,255,.045);
+            color: #e0f2fe;
+            font-weight: 900;
+        }
+        @media (max-width: 760px) {
+            .topbar-inner {
+                grid-template-columns: 1fr;
+            }
+            .topbar-badges {
+                justify-content: flex-start;
+            }
+            .hud, .objective-row {
+                grid-template-columns: 1fr;
+            }
+            .param-grid {
+                grid-template-columns: 1fr;
+            }
+            .arcade-shell {
+                padding: 10px;
+            }
+            .maze {
+                gap: 3px;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def style_vars(room_kind: str) -> str:
+    t = ROOM_THEMES[room_kind]
+    return "; ".join(
+        [
+            f"--accent:{t['accent']}",
+            f"--wall:{t['wall']}",
+            f"--floor:{t['floor']}",
+            f"--path:{t['path']}",
+            f"--danger:{t['danger']}",
+            f"--key:{t['key']}",
+            f"--portal:{t['portal']}",
+            f"--agent:{t['agent_color']}",
+        ]
+    )
+
+
+def thumbnail_markup(room_kind: str) -> str:
+    thumbnails = {
+        "dp": '<span class="thumb-name">PAC-MAN</span><span class="mini-wall w1"></span><span class="mini-wall w2"></span><span class="mini-wall w3"></span><span class="mini-pellet p1"></span><span class="mini-pellet p2"></span><span class="mini-pellet p3"></span><span class="mini-pellet p4"></span><span class="mini-pac"></span><span class="mini-ghost"></span>',
+        "sarsa": '<span class="thumb-name">SOKOBAN</span><span class="mini-laser l1"></span><span class="mini-laser l2"></span><span class="mini-player"></span><span class="mini-crate"></span><span class="mini-target"></span>',
+        "q_learning": '<span class="thumb-name">BOMBERMAN</span><span class="mini-wall w1"></span><span class="mini-wall w2"></span><span class="mini-bomber"></span><span class="mini-bomb"></span><span class="mini-blast"></span>',
+        "approx": '<span class="thumb-name">LUNAR LANDER</span><span class="mini-lander"></span><span class="mini-meteor"></span><span class="mini-pad"></span><span class="mini-moon"></span>',
+        "obstacles": '<span class="thumb-name">PORTAL</span><span class="mini-portal portal-a"></span><span class="mini-portal purple portal-b"></span><span class="mini-route"></span><span class="mini-runner"></span>',
+    }
+    return thumbnails[room_kind]
+
+
+def metric_dataframe(metrics: List[Dict[str, object]]) -> pd.DataFrame:
+    df = pd.DataFrame(metrics)
+    if "reward" in df:
+        df["reward_ma_25"] = moving_average(df["reward"].astype(float).tolist(), 25)
+    if "success" in df:
+        df["success_rate_ma_25"] = moving_average(df["success"].astype(float).tolist(), 25)
+    return df
+
+
+def run_success_rate(run: Dict[str, Any]) -> float:
+    attempts = run["result"].get("attempts", [])
+    if not attempts:
+        return 0.0
+    if run["room_kind"] == "dp":
+        sample = attempts
+    else:
+        sample = attempts[-min(50, len(attempts)) :]
+    return sum(bool(attempt["success"]) for attempt in sample) / len(sample)
+
+
+def mark_room_completed(room_kind: str) -> None:
+    completed = st.session_state.setdefault("completed_rooms", [])
+    if room_kind not in completed:
+        completed.append(room_kind)
+
+
+def next_room_kind(room_kind: str) -> str | None:
+    index = ROOM_ORDER.index(room_kind)
+    return ROOM_ORDER[index + 1] if index + 1 < len(ROOM_ORDER) else None
+
+
+def header() -> None:
+    st.markdown(
+        """
+        <div class="topbar">
+          <div class="topbar-inner">
+            <div>
+              <h1>Reinforcement Learning Escape Rooms</h1>
+              <p>Choose a game, play it manually, train an agent, then inspect replay and learning analytics.</p>
+            </div>
+            <div class="topbar-badges">
+              <span class="topbar-badge active">1 Game Select</span>
+              <span class="topbar-badge">2 Play</span>
+              <span class="topbar-badge">3 Train</span>
+              <span class="topbar-badge">4 Replay</span>
+              <span class="topbar-badge">5 Analytics</span>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def room_intro(room_kind: str) -> None:
+    t = ROOM_THEMES[room_kind]
+    objectives = "".join(f'<div class="objective">{html.escape(item)}</div>' for item in t["objectives"])
+    st.markdown(
+        f"""
+        <div class="game-card" style="{style_vars(room_kind)}">
+          <h2>{html.escape(t["title"])}</h2>
+          <div class="sub">{html.escape(t["subtitle"])}</div>
+          <div class="mission">{html.escape(t["mission"])}</div>
+          <div class="objective-row">{objectives}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def hud(room_kind: str, values: List[Tuple[str, str]], highlight: int = 0) -> None:
+    cards = []
+    for index, (label, value) in enumerate(values):
+        klass = "hud-card highlight" if index == highlight else "hud-card"
+        cards.append(
+            f'<div class="{klass}"><div class="hud-label">{html.escape(label)}</div><div class="hud-value">{html.escape(value)}</div></div>'
+        )
+    st.markdown(f'<div class="hud" style="{style_vars(room_kind)}">{"".join(cards)}</div>', unsafe_allow_html=True)
+
+
+def grid_label(env: GridEscapeRoom, pos: Tuple[int, int], state: GridState, room_kind: str) -> Tuple[str, str]:
+    t = ROOM_THEMES[room_kind]
+    labels = t.get("labels", {})
+    if pos in env.config.walls:
+        return "", "wall"
+    for idx, key_pos in enumerate(env.config.keys):
+        if pos == key_pos and not (state[2] & (1 << idx)):
+            if room_kind == "q_learning":
+                return f"C{idx + 1}", "key"
+            return labels.get("key", "KEY"), "key"
+    if pos in env.config.portals:
+        return labels.get("portal", "WARP"), "portal"
+    if pos in env.config.traps:
+        return "", "trap"
+    if pos in env.config.bonuses:
+        return labels.get("bonus", "BON"), "bonus"
+    if pos in env.config.slippery:
+        return labels.get("ice", "ICE"), "slippery"
+    if pos == env.config.goal:
+        return labels.get("goal", "GOAL"), "goal"
+    if pos == env.config.start:
+        return labels.get("start", "START"), "start"
+    return "", "empty"
+
+
+def render_grid_game(env: GridEscapeRoom, trajectory: List[Dict[str, object]], step_index: int, room_kind: str) -> None:
+    t = ROOM_THEMES[room_kind]
+    current = trajectory[min(step_index, len(trajectory) - 1)]["state"]
+    current_pos = (current[0], current[1])
+    path = {(item["state"][0], item["state"][1]) for item in trajectory[: step_index + 1]}
+    guards = set(env.guard_positions(current[3]))
+    cells = []
+    for row in range(env.rows):
+        for col in range(env.cols):
+            pos = (row, col)
+            label, klass = grid_label(env, pos, current, room_kind)
+            if pos == current_pos:
+                klass = "agent"
+                content = '<div class="pac"></div>'
+            elif pos in guards:
+                klass = "guard"
+                content = f'<span class="label">{html.escape(t.get("labels", {}).get("guard", "SEC"))}</span>'
+            elif label:
+                content = f'<span class="label">{html.escape(label)}</span>'
+            else:
+                content = ""
+            visited = " visited" if pos in path and klass == "empty" else ""
+            cells.append(f'<div class="tile {klass}{visited}">{content}</div>')
+
+    st.markdown(
+        f"""
+        <div class="arcade-shell" style="{style_vars(room_kind)}">
+          <div class="arcade-title"><span>{html.escape(t["title"])}</span><span>{html.escape(t["algorithm"])}</span></div>
+          <div class="maze">{"".join(cells)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_arena(env: ContinuousEscapeRoom, trajectory: List[Dict[str, object]], step_index: int, room_kind: str) -> None:
+    t = ROOM_THEMES[room_kind]
+    size = env.config.room_size
+    current_index = min(step_index, len(trajectory) - 1)
+    states = [np.asarray(item["state"], dtype=float) for item in trajectory[: current_index + 1]]
+    current = states[-1]
+    dots = []
+    stride = max(1, len(states) // 140)
+    for state in states[::stride]:
+        left = state[0] / size * 100
+        bottom = state[1] / size * 100
+        dots.append(f'<div class="arena-path" style="left:{left:.2f}%; bottom:{bottom:.2f}%"></div>')
+
+    hazards = []
+    for x1, y1, x2, y2 in env.config.hazards:
+        hazards.append(
+            f'<div class="arena-hazard" style="left:{x1 / size * 100:.2f}%; bottom:{y1 / size * 100:.2f}%; width:{(x2 - x1) / size * 100:.2f}%; height:{(y2 - y1) / size * 100:.2f}%"></div>'
+        )
+
+    obstacles = []
+    if isinstance(env, DynamicObstacleRoom):
+        half = env.config.obstacle_width / 2
+        step_obstacles = trajectory[current_index].get("obstacles") or env.obstacles
+        for obstacle in step_obstacles:
+            obstacles.append(
+                f'<div class="arena-obstacle" style="left:{(obstacle["x"] - half) / size * 100:.2f}%; bottom:{(obstacle["y"] - half) / size * 100:.2f}%; width:{env.config.obstacle_width / size * 100:.2f}%; height:{env.config.obstacle_width / size * 100:.2f}%"></div>'
+            )
+
+    goal_x, goal_y = env.config.goal
+    radius = env.config.goal_radius / size * 200
+    agent_x = current[0] / size * 100
+    agent_y = current[1] / size * 100
+    st.markdown(
+        f"""
+        <div class="arena" style="{style_vars(room_kind)}">
+          {"".join(hazards)}
+          {"".join(obstacles)}
+          {"".join(dots)}
+          <div class="arena-goal" style="left:{goal_x / size * 100:.2f}%; bottom:{goal_y / size * 100:.2f}%; width:{radius:.2f}%; height:{radius:.2f}%"></div>
+          <div class="arena-agent" style="left:{agent_x:.2f}%; bottom:{agent_y:.2f}%"></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def trajectory_score(trajectory: List[Dict[str, object]], step_index: int) -> float:
+    return sum(float(item["reward"]) for item in trajectory[: step_index + 1])
+
+
+def grid_hud(env: GridEscapeRoom, trajectory: List[Dict[str, object]], step_index: int, room_kind: str) -> None:
+    current = trajectory[min(step_index, len(trajectory) - 1)]["state"]
+    collected = int(current[2]).bit_count()
+    required = len(env.config.keys)
+    done = bool(trajectory[min(step_index, len(trajectory) - 1)].get("done"))
+    hud(
+        room_kind,
+        [
+            ("score", f"{trajectory_score(trajectory, step_index):.0f}"),
+            ("step", str(step_index)),
+            ("items", "none" if required == 0 else f"{collected}/{required}"),
+            ("state", f"{current[0]},{current[1]}"),
+            ("status", "won" if done else "playing"),
+        ],
+    )
+
+
+def arena_hud(env: ContinuousEscapeRoom, trajectory: List[Dict[str, object]], step_index: int, room_kind: str) -> None:
+    current = np.asarray(trajectory[min(step_index, len(trajectory) - 1)]["state"], dtype=float)
+    dist = float(np.hypot(env.config.goal[0] - current[0], env.config.goal[1] - current[1]))
+    visible = "n/a"
+    if isinstance(env, DynamicObstacleRoom):
+        visible = "yes" if len(current) > 6 and current[6] > 0.5 else "no"
+    hud(
+        room_kind,
+        [
+            ("score", f"{trajectory_score(trajectory, step_index):.1f}"),
+            ("step", str(step_index)),
+            ("distance", f"{dist:.2f}m"),
+            ("velocity", f"{int(current[2])},{int(current[3])}"),
+            ("sensor", visible),
+        ],
+    )
+
+
+def make_env(room_kind: str, seed: int = 7, slip: float = 0.2, obstacle_count: int = 7, observation_range: float = 3.0):
+    if room_kind == "dp":
+        return GridEscapeRoom(room1_config(slip_probability=slip, seed=seed))
+    if room_kind == "sarsa":
+        return SokobanEscapeRoom(room2_config(slip_probability=slip, seed=seed))
+    if room_kind == "q_learning":
+        return GridEscapeRoom(room3_config(slip_probability=slip, seed=seed))
+    if room_kind == "approx":
+        return ContinuousEscapeRoom(continuous_room_config(seed=seed))
+    return DynamicObstacleRoom(obstacle_room_config(seed=seed, obstacle_count=obstacle_count, observation_range=observation_range))
+
+
+def arcade_payload(room_kind: str, replay_attempt: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    env = make_env(room_kind, seed=43, slip=0.2, obstacle_count=8, observation_range=3.4)
+    theme = ROOM_THEMES[room_kind]
+    base: Dict[str, Any] = {
+        "kind": room_kind,
+        "title": theme["title"],
+        "subtitle": theme["subtitle"],
+        "algorithm": theme["algorithm"],
+        "mission": theme["mission"],
+        "artUrl": f"/app/static/game_art/{theme['art']}",
+        "agent": theme["agent"],
+        "goalLabel": theme["goal"],
+        "colors": {
+            "accent": theme["accent"],
+            "agent": theme["agent_color"],
+            "wall": theme["wall"],
+            "floor": theme["floor"],
+            "path": theme["path"],
+            "danger": theme["danger"],
+            "key": theme["key"],
+            "portal": theme["portal"],
+        },
+    }
+    if isinstance(env, GridEscapeRoom):
+        base.update(
+            {
+                "mode": "grid",
+                "rows": env.rows,
+                "cols": env.cols,
+                "start": list(env.config.start),
+                "goal": list(env.config.goal),
+                "walls": [list(pos) for pos in sorted(env.config.walls)],
+                "slippery": [list(pos) for pos in sorted(env.config.slippery)],
+                "traps": [list(pos) for pos in sorted(env.config.traps)],
+                "bonuses": [list(pos) for pos in sorted(env.config.bonuses)],
+                "keys": [list(pos) for pos in env.config.keys],
+                "portals": [{"from": list(k), "to": list(v)} for k, v in env.config.portals.items()],
+                "guardCycles": [[list(pos) for pos in cycle] for cycle in env.config.guard_cycles],
+                "boxStart": list(env.config.box_start) if env.config.box_start is not None else None,
+                "boxTarget": list(env.config.box_target) if env.config.box_target is not None else None,
+                "slipProbability": env.config.slip_probability,
+                "stepReward": env.config.step_reward,
+                "goalReward": env.config.goal_reward,
+                "keyReward": env.config.key_reward,
+                "blockedGoalPenalty": env.config.blocked_goal_penalty,
+                "guardReward": env.config.guard_reward,
+                "portalReward": env.config.portal_reward,
+                "trapRewards": {f"{pos[0]},{pos[1]}": reward for pos, reward in env.config.traps.items()},
+                "labels": theme.get("labels", {}),
+            }
+        )
+    else:
+        base.update(
+            {
+                "mode": "continuous",
+                "roomSize": env.config.room_size,
+                "start": list(env.config.start),
+                "goal": list(env.config.goal),
+                "goalRadius": env.config.goal_radius,
+                "hazards": [list(item) for item in env.config.hazards],
+                "obstacleMode": isinstance(env, DynamicObstacleRoom),
+                "teleportMode": False,
+                "obstacleCount": getattr(env.config, "obstacle_count", 0),
+                "teleportCount": max(4, getattr(env.config, "obstacle_count", 7)),
+                "obstacleWidth": getattr(env.config, "obstacle_width", 0.5),
+                "observationRange": getattr(env.config, "observation_range", 3.0),
+                "stepReward": env.config.step_reward,
+                "goalReward": env.config.goal_reward,
+                "wallPenalty": env.config.wall_penalty,
+                "hazardPenalty": env.config.hazard_penalty,
+                "progressScale": env.config.progress_scale,
+                "obstaclePenalty": getattr(env.config, "obstacle_penalty", 0.0),
+            }
+        )
+    if replay_attempt is not None:
+        rewards = np.asarray(replay_attempt["rewards"], dtype=float)
+        base["replay"] = {
+            "episode": int(replay_attempt["episode"]),
+            "states": np.asarray(replay_attempt["states"]).tolist(),
+            "actions": np.asarray(replay_attempt["actions"], dtype=int).tolist(),
+            "scores": np.cumsum(rewards).round(3).tolist(),
+            "reward": float(replay_attempt["reward"]),
+            "success": bool(replay_attempt["success"]),
+            "epsilon": float(replay_attempt.get("epsilon", 0.0)),
+        }
+        if "obstacles" in replay_attempt:
+            base["replay"]["obstacles"] = np.asarray(replay_attempt["obstacles"], dtype=float).tolist()
+    return base
+
+
+def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = None) -> None:
+    config = json.dumps(arcade_payload(room_kind, replay_attempt), ensure_ascii=False)
+    template = r"""
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <div class="real-game">
+      <style>
+        .real-game {
+          --accent: #38bdf8;
+          --panel: #08111f;
+          --text: #f8fafc;
+          --muted: #aeb9c9;
+          font-family: Inter, Segoe UI, Arial, sans-serif;
+          color: var(--text);
+          background: linear-gradient(180deg, #040814 0%, #08111f 100%);
+          border: 1px solid #263244;
+          border-radius: 18px;
+          padding: 14px;
+          overflow: hidden;
+        }
+        .game-grid {
+          display: grid;
+          grid-template-columns: minmax(480px, 1fr) 310px;
+          gap: 14px;
+          align-items: stretch;
+        }
+        .canvas-wrap {
+          position: relative;
+          width: 100%;
+          max-width: 820px;
+          align-self: start;
+        }
+        canvas {
+          display: block;
+          width: 100%;
+          aspect-ratio: 4 / 3;
+          border-radius: 12px;
+          border: 2px solid var(--accent);
+          background: #020617;
+          box-shadow: 0 0 28px color-mix(in srgb, var(--accent), transparent 55%);
+          outline: none;
+        }
+        .game-overlay {
+          position: absolute;
+          inset: 2px;
+          z-index: 10;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 22px;
+          border-radius: 11px;
+          background: rgba(2, 6, 23, .72);
+          backdrop-filter: blur(7px);
+        }
+        .game-overlay.hidden { display: none; }
+        .overlay-panel {
+          width: min(88%, 430px);
+          border: 1px solid color-mix(in srgb, var(--accent), white 18%);
+          border-radius: 12px;
+          padding: 22px;
+          text-align: center;
+          background: rgba(8, 17, 31, .94);
+          box-shadow: 0 22px 70px rgba(0,0,0,.48), 0 0 24px color-mix(in srgb, var(--accent), transparent 76%);
+        }
+        .overlay-kicker {
+          color: var(--accent);
+          font-size: .74rem;
+          font-weight: 900;
+          text-transform: uppercase;
+          margin-bottom: 7px;
+        }
+        .overlay-panel h3 {
+          margin: 0;
+          color: #fff;
+          font-size: 1.65rem;
+        }
+        .overlay-panel p {
+          margin: 9px 0 16px;
+          color: #cbd5e1;
+          line-height: 1.45;
+        }
+        .overlay-panel button {
+          width: 100%;
+          min-height: 46px;
+          border: 1px solid var(--accent);
+          border-radius: 8px;
+          color: #fff;
+          background: color-mix(in srgb, var(--accent), #0f172a 58%);
+          font-weight: 900;
+          cursor: pointer;
+        }
+        .side {
+          border: 1px solid #263244;
+          border-radius: 16px;
+          background: rgba(15, 23, 42, .92);
+          padding: 14px;
+          min-height: 100%;
+        }
+        .side h2 {
+          margin: 0;
+          font-size: 1.25rem;
+          color: #f8fafc;
+        }
+        .side .sub {
+          color: var(--accent);
+          font-weight: 900;
+          margin: 4px 0 10px 0;
+        }
+        .side p {
+          color: #cbd5e1;
+          line-height: 1.45;
+          margin: 0 0 12px 0;
+          font-size: .93rem;
+        }
+        .stats {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+          margin: 12px 0;
+        }
+        .stat {
+          border: 1px solid #263244;
+          border-radius: 10px;
+          padding: 8px;
+          background: rgba(255,255,255,.04);
+        }
+        .stat b {
+          display: block;
+          color: #94a3b8;
+          font-size: .72rem;
+          text-transform: uppercase;
+        }
+        .stat span {
+          display: block;
+          color: #f8fafc;
+          font-size: 1.02rem;
+          font-weight: 900;
+          margin-top: 3px;
+        }
+        .msg {
+          min-height: 54px;
+          border: 1px solid color-mix(in srgb, var(--accent), #263244 50%);
+          border-radius: 10px;
+          background: rgba(255,255,255,.04);
+          padding: 10px;
+          color: #e5e7eb;
+          line-height: 1.35;
+          margin-bottom: 12px;
+        }
+        .controls {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          margin-top: 10px;
+        }
+        .controls button, .reset {
+          min-height: 42px;
+          border: 1px solid var(--accent);
+          border-radius: 10px;
+          background: linear-gradient(135deg, #1d4ed8, #111827);
+          color: #ffffff;
+          font-weight: 900;
+          cursor: pointer;
+          box-shadow: 0 8px 20px rgba(0,0,0,.25);
+        }
+        .controls button:hover, .reset:hover {
+          border-color: #facc15;
+          background: linear-gradient(135deg, #2563eb, #172554);
+        }
+        .reset {
+          width: 100%;
+          margin-top: 0;
+        }
+        .action-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+          margin-top: 8px;
+        }
+        .wide {
+          grid-column: span 3;
+        }
+        .hidden {
+          display: none;
+        }
+        .help {
+          margin-top: 11px;
+          color: #94a3b8;
+          font-size: .84rem;
+          line-height: 1.35;
+        }
+        .replay-controls {
+          display: grid;
+          grid-template-columns: 44px 1fr 44px;
+          gap: 8px;
+          align-items: center;
+          margin-top: 10px;
+        }
+        .replay-controls button {
+          min-height: 42px;
+          border: 1px solid var(--accent);
+          border-radius: 9px;
+          background: #111827;
+          color: #fff;
+          font-weight: 900;
+          cursor: pointer;
+        }
+        .replay-controls input[type="range"] {
+          width: 100%;
+          accent-color: var(--accent);
+        }
+        .replay-speed {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 6px;
+          margin-top: 8px;
+        }
+        .replay-speed button {
+          border: 1px solid #334155;
+          border-radius: 7px;
+          background: #0f172a;
+          color: #cbd5e1;
+          min-height: 34px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+        .replay-speed button.active {
+          border-color: var(--accent);
+          color: #fff;
+          background: color-mix(in srgb, var(--accent), #0f172a 76%);
+        }
+        @media (max-width: 900px) {
+          .game-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      </style>
+      <div class="game-grid">
+        <div class="canvas-wrap">
+          <canvas id="gameCanvas" width="820" height="615" tabindex="0"></canvas>
+          <div class="game-overlay" id="gameOverlay">
+            <div class="overlay-panel">
+              <div class="overlay-kicker" id="overlayKicker">ARCADE MISSION</div>
+              <h3 id="overlayTitle">Ready?</h3>
+              <p id="overlayCopy">Enter the arena and complete the objective.</p>
+              <button id="overlayAction">START MISSION</button>
+            </div>
+          </div>
+        </div>
+        <div class="side">
+          <h2 id="gameTitle"></h2>
+          <div class="sub" id="gameSub"></div>
+          <p id="gameMission"></p>
+          <div class="stats">
+            <div class="stat"><b>Score</b><span id="score">0</span></div>
+            <div class="stat"><b>Steps</b><span id="steps">0</span></div>
+            <div class="stat"><b>Goal</b><span id="goal">-</span></div>
+            <div class="stat"><b>Status</b><span id="status">Ready</span></div>
+          </div>
+          <div class="msg" id="message">Click the game and use keyboard controls.</div>
+          <div id="gridControls" class="controls">
+            <div></div><button data-grid="0">UP</button><div></div>
+            <button data-grid="3">LEFT</button><button data-grid="2">DOWN</button><button data-grid="1">RIGHT</button>
+          </div>
+          <div id="vectorControls" class="controls hidden">
+            <button data-v="-1,1">UP LEFT</button><button data-v="0,1">UP</button><button data-v="1,1">UP RIGHT</button>
+            <button data-v="-1,0">LEFT</button><button data-v="0,0">STOP</button><button data-v="1,0">RIGHT</button>
+            <button data-v="-1,-1">DOWN LEFT</button><button data-v="0,-1">DOWN</button><button data-v="1,-1">DOWN RIGHT</button>
+          </div>
+          <div id="replayPanel" class="hidden">
+            <div class="replay-controls">
+              <button id="replayPrev" title="Previous step">&#9664;</button>
+              <button id="replayToggle">PAUSE</button>
+              <button id="replayNext" title="Next step">&#9654;</button>
+              <div></div><input id="replayTimeline" type="range" min="0" value="0"><div></div>
+            </div>
+            <div class="replay-speed">
+              <button data-speed="900">0.5x</button>
+              <button data-speed="450" class="active">1x</button>
+              <button data-speed="220">2x</button>
+              <button data-speed="90">4x</button>
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="reset" id="pauseBtn">PAUSE</button>
+            <button class="reset" id="resetBtn">RESET</button>
+          </div>
+          <div class="help" id="gameHelp">Keyboard: arrows or WASD. In continuous rooms, hold keys to fly. In grid rooms, each key press moves one tile.</div>
+        </div>
+      </div>
+      <script>
+      const cfg = __CONFIG__;
+      const root = document.currentScript.closest('.real-game');
+      root.style.setProperty('--accent', cfg.colors.accent);
+      const canvas = root.querySelector('#gameCanvas');
+      const ctx = canvas.getContext('2d');
+      const arenaArt = new Image();
+      arenaArt.src = cfg.artUrl;
+      arenaArt.onload = () => draw();
+      const scoreEl = root.querySelector('#score');
+      const stepsEl = root.querySelector('#steps');
+      const goalEl = root.querySelector('#goal');
+      const statusEl = root.querySelector('#status');
+      const msgEl = root.querySelector('#message');
+      root.querySelector('#gameTitle').textContent = cfg.title;
+      root.querySelector('#gameSub').textContent = cfg.algorithm + ' | ' + cfg.subtitle;
+      root.querySelector('#gameMission').textContent = cfg.mission;
+      goalEl.textContent = cfg.goalLabel;
+      const gameOverlay = root.querySelector('#gameOverlay');
+      const overlayKicker = root.querySelector('#overlayKicker');
+      const overlayTitle = root.querySelector('#overlayTitle');
+      const overlayCopy = root.querySelector('#overlayCopy');
+      const overlayAction = root.querySelector('#overlayAction');
+      const pauseBtn = root.querySelector('#pauseBtn');
+      overlayTitle.textContent = cfg.title;
+      overlayCopy.textContent = cfg.mission;
+      let gameStarted = false;
+      let gamePaused = false;
+      let resultShown = false;
+      function showGameOverlay(kicker, title, copy, action) {
+        overlayKicker.textContent = kicker;
+        overlayTitle.textContent = title;
+        overlayCopy.textContent = copy;
+        overlayAction.textContent = action;
+        gameOverlay.classList.remove('hidden');
+      }
+      function hideGameOverlay() {
+        gameOverlay.classList.add('hidden');
+      }
+      if (cfg.mode === 'continuous') {
+        root.querySelector('#gridControls').classList.add('hidden');
+        root.querySelector('#vectorControls').classList.remove('hidden');
+      }
+      if (cfg.replay) {
+        root.querySelector('#gridControls').classList.add('hidden');
+        root.querySelector('#vectorControls').classList.add('hidden');
+        root.querySelector('#replayPanel').classList.remove('hidden');
+        root.querySelector('#resetBtn').textContent = 'RESTART REPLAY';
+        pauseBtn.classList.add('hidden');
+        gameStarted = true;
+        hideGameOverlay();
+        root.querySelector('#gameHelp').textContent = 'Replay controls: pause, inspect one step at a time, drag the timeline, or change playback speed.';
+        root.querySelector('#gameSub').textContent = cfg.algorithm + ' | Training episode ' + cfg.replay.episode;
+      }
+
+      const W = canvas.width;
+      const H = canvas.height;
+      const keyOf = p => p[0] + ',' + p[1];
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      function drawArtBase(darken=.32) {
+        if (arenaArt.complete && arenaArt.naturalWidth > 0) {
+          ctx.drawImage(arenaArt, 0, 0, W, H);
+        } else {
+          ctx.fillStyle = '#020617';
+          ctx.fillRect(0, 0, W, H);
+        }
+        ctx.fillStyle = 'rgba(2,6,23,' + darken + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+      const particles = [];
+      function emitBurst(x, y, color, count=16) {
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 1.2 + Math.random() * 3.2;
+          particles.push({
+            x, y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 1,
+            decay: .018 + Math.random() * .025,
+            size: 2 + Math.random() * 4,
+            color
+          });
+        }
+      }
+      function drawParticles() {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const particle = particles[i];
+          particle.x += particle.vx;
+          particle.y += particle.vy;
+          particle.vx *= .97;
+          particle.vy *= .97;
+          particle.life -= particle.decay;
+          if (particle.life <= 0) { particles.splice(i, 1); continue; }
+          ctx.globalAlpha = particle.life;
+          ctx.fillStyle = particle.color;
+          ctx.beginPath();
+          ctx.arc(particle.x, particle.y, particle.size * particle.life, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+      function rr(x, y, w, h, r, fill, stroke) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+        if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+      }
+      function updateStats(score, steps, status, message) {
+        scoreEl.textContent = Math.round(score).toString();
+        stepsEl.textContent = steps.toString();
+        statusEl.textContent = status;
+        msgEl.textContent = message;
+      }
+
+      let grid = null;
+      function initGrid() {
+        grid = {
+          pos: cfg.start.slice(),
+          dir: 1,
+          score: 0,
+          steps: 0,
+          anim: 0,
+          lastEnemyTick: 0,
+          enemyHitCooldown: 0,
+          playerMoved: false,
+          won: false,
+          phase: 0,
+          collected: new Set(),
+          bonuses: new Set(),
+          visited: new Set([keyOf(cfg.start)]),
+          message: 'Collect what the room requires, then reach ' + cfg.goalLabel + '.'
+        };
+        grid.walls = new Set(cfg.walls.map(keyOf));
+        grid.slippery = new Set(cfg.slippery.map(keyOf));
+        grid.traps = new Set(cfg.traps.map(keyOf));
+        grid.bonusesSet = new Set(cfg.bonuses.map(keyOf));
+        grid.keys = cfg.keys || [];
+        grid.portals = new Map((cfg.portals || []).map(p => [keyOf(p.from), p.to]));
+        grid.targets = cfg.boxTarget ? [cfg.boxTarget] : (cfg.keys || []);
+        grid.boxes = cfg.kind === 'sarsa' && cfg.boxStart ? [cfg.boxStart.slice()] : [];
+        grid.pellets = new Set();
+        grid.pelletsEaten = 0;
+        grid.requiredPellets = 0;
+        if (cfg.kind === 'sarsa') {
+          grid.message = 'Sokoban rule: push the BOX onto TARGET, then enter SAFE.';
+        } else if (cfg.kind === 'dp') {
+          grid.message = 'Reach EXIT quickly. Ghost positions are part of the known model.';
+        }
+        draw();
+      }
+      function guardPositions() {
+        if (!cfg.guardCycles) return [];
+        return cfg.guardCycles.map(cycle => cycle[grid.phase % cycle.length]);
+      }
+      function insideGrid(row, col) {
+        return row >= 0 && row < cfg.rows && col >= 0 && col < cfg.cols;
+      }
+      function boxIndexAt(row, col) {
+        return (grid.boxes || []).findIndex(box => box[0] === row && box[1] === col);
+      }
+      function sokobanSolved() {
+        if (!grid.targets || !grid.targets.length) return true;
+        const targets = new Set(grid.targets.map(keyOf));
+        return grid.boxes.every(box => targets.has(keyOf(box)));
+      }
+      function enemyCollision() {
+        if (cfg.kind !== 'dp') return false;
+        if (grid.anim < grid.enemyHitCooldown) return false;
+        const hit = guardPositions().some(enemy => keyOf(enemy) === keyOf(grid.pos));
+        if (hit) {
+          const hitCenter = cellCenter(grid.pos);
+          emitBurst(hitCenter.x, hitCenter.y, '#fb7185', 28);
+          grid.score += cfg.guardReward;
+          grid.pos = cfg.start.slice();
+          grid.enemyHitCooldown = grid.anim + 2200;
+          grid.message = 'A ghost caught PAC. Back to start.';
+        }
+        return hit;
+      }
+      function updateGridWorld(now) {
+        if (!grid || grid.won) return;
+        grid.anim = now || 0;
+        if (grid.lastEnemyTick === 0) grid.lastEnemyTick = grid.anim;
+        if (grid.anim - grid.lastEnemyTick < 360) return;
+        grid.lastEnemyTick = grid.anim;
+        if (cfg.kind === 'dp' && !cfg.replay) enemyCollision();
+      }
+      function moveSokoban(action) {
+        canvas.focus();
+        if (!grid || grid.won) return;
+        if (grid.slippery.has(keyOf(grid.pos)) && Math.random() < cfg.slipProbability) {
+          action = Math.random() < 0.5 ? (action + 1) % 4 : (action + 3) % 4;
+          grid.message = 'Oil slick changed your push direction.';
+        }
+        const deltas = [[-1,0],[0,1],[1,0],[0,-1]];
+        const d = deltas[action];
+        grid.dir = action;
+        const nr = grid.pos[0] + d[0];
+        const nc = grid.pos[1] + d[1];
+        grid.steps += 1;
+        grid.score += cfg.stepReward;
+        if (!insideGrid(nr, nc) || grid.walls.has(nr + ',' + nc)) {
+          grid.score += cfg.blockedGoalPenalty;
+          grid.message = 'Wall blocked the move.';
+          draw();
+          return;
+        }
+        const boxIndex = boxIndexAt(nr, nc);
+        if (boxIndex >= 0) {
+          const br = nr + d[0];
+          const bc = nc + d[1];
+          if (!insideGrid(br, bc) || grid.walls.has(br + ',' + bc) || boxIndexAt(br, bc) >= 0) {
+            grid.message = 'BOX is blocked. Try another angle.';
+            draw();
+            return;
+          }
+          grid.boxes[boxIndex] = [br, bc];
+          grid.pos = [nr, nc];
+          const pushedBox = cellCenter([br, bc]);
+          emitBurst(pushedBox.x, pushedBox.y, '#fde68a', 12);
+          grid.message = 'BOX pushed.';
+        } else {
+          grid.pos = [nr, nc];
+        }
+        const here = keyOf(grid.pos);
+        grid.visited.add(here);
+        if (grid.traps.has(here)) {
+          grid.score += cfg.trapRewards[here] || 0;
+          grid.message = 'Laser tile hit. Keep the crate route clean.';
+        }
+        if (grid.bonusesSet.has(here) && !grid.bonuses.has(here)) {
+          grid.bonuses.add(here);
+          grid.score += 18;
+          grid.message = 'Coin collected.';
+        }
+        if (sokobanSolved() && !grid.collected.has(0)) {
+          grid.collected.add(0);
+          grid.score += cfg.keyReward;
+          const targetCenter = cellCenter(grid.targets[0]);
+          emitBurst(targetCenter.x, targetCenter.y, '#86efac', 30);
+          grid.message = 'BOX locked on TARGET. SAFE is open.';
+        }
+        if (keyOf(grid.pos) === keyOf(cfg.goal)) {
+          if (sokobanSolved()) {
+            grid.score += cfg.goalReward;
+            grid.won = true;
+            const safeCenter = cellCenter(cfg.goal);
+            emitBurst(safeCenter.x, safeCenter.y, '#86efac', 46);
+            grid.message = 'Sokoban vault cleared.';
+          } else {
+            grid.score += cfg.blockedGoalPenalty;
+            grid.message = 'SAFE is locked. Push BOX onto TARGET first.';
+          }
+        }
+        draw();
+      }
+      function moveGrid(action) {
+        canvas.focus();
+        if (!grid || grid.won) return;
+        if (cfg.kind === 'sarsa') {
+          moveSokoban(action);
+          return;
+        }
+        grid.playerMoved = true;
+        if (grid.slippery.has(keyOf(grid.pos)) && Math.random() < cfg.slipProbability) {
+          action = Math.random() < 0.5 ? (action + 1) % 4 : (action + 3) % 4;
+          grid.message = 'Slippery tile changed your direction.';
+        }
+        const deltas = [[-1,0],[0,1],[1,0],[0,-1]];
+        const d = deltas[action];
+        grid.dir = action;
+        const nr = clamp(grid.pos[0] + d[0], 0, cfg.rows - 1);
+        const nc = clamp(grid.pos[1] + d[1], 0, cfg.cols - 1);
+        if (!grid.walls.has(nr + ',' + nc)) grid.pos = [nr, nc];
+        grid.steps += 1;
+        grid.score += cfg.stepReward;
+        const here = keyOf(grid.pos);
+        grid.visited.add(here);
+        if (grid.portals.has(here)) {
+          grid.pos = grid.portals.get(here).slice();
+          grid.message = 'Warp portal activated.';
+        }
+        const afterPortal = keyOf(grid.pos);
+        if (grid.traps.has(afterPortal)) {
+          grid.score += cfg.trapRewards[afterPortal] || 0;
+          const trapCenter = cellCenter(grid.pos);
+          emitBurst(trapCenter.x, trapCenter.y, '#fb7185', 22);
+          grid.message = cfg.kind === 'sarsa' ? 'Laser hit. Move carefully.' : 'Danger tile hit.';
+        }
+        if (grid.bonusesSet.has(afterPortal) && !grid.bonuses.has(afterPortal)) {
+          grid.bonuses.add(afterPortal);
+          grid.score += 18;
+          const bonusCenter = cellCenter(grid.pos);
+          emitBurst(bonusCenter.x, bonusCenter.y, '#facc15', 22);
+          grid.message = 'Bonus collected.';
+        }
+        for (let i = 0; i < grid.keys.length; i++) {
+          if (keyOf(grid.keys[i]) === afterPortal && !grid.collected.has(i)) {
+            grid.collected.add(i);
+            grid.score += cfg.keyReward;
+            const coreCenter = cellCenter(grid.pos);
+            emitBurst(coreCenter.x, coreCenter.y, '#2dd4bf', 28);
+            grid.message = cfg.kind === 'sarsa' ? 'BOX condition completed. Now open SAFE.' : 'CORE activated.';
+          }
+        }
+        grid.phase += 1;
+        for (const g of guardPositions()) {
+          if (g[0] === grid.pos[0] && g[1] === grid.pos[1]) {
+            grid.score += cfg.guardReward;
+            const guardCenter = cellCenter(grid.pos);
+            emitBurst(guardCenter.x, guardCenter.y, '#f97316', 26);
+            grid.pos = cfg.start.slice();
+            grid.message = 'Security caught you. Back to start.';
+          }
+        }
+        enemyCollision();
+        if (keyOf(grid.pos) === keyOf(cfg.goal)) {
+          const requirementMet = cfg.kind === 'dp' || grid.collected.size >= grid.keys.length;
+          if (requirementMet) {
+            grid.score += cfg.goalReward;
+            grid.won = true;
+            const goalCenter = cellCenter(grid.pos);
+            emitBurst(goalCenter.x, goalCenter.y, '#86efac', 46);
+            grid.message = 'Room cleared. Great run.';
+          } else {
+            grid.score += cfg.blockedGoalPenalty;
+            grid.message = 'The exit is locked. Collect the required item first.';
+          }
+        }
+        draw();
+      }
+      const gridLayout = { cell: 53, bx: 145, by: 48 };
+      function cellCenter(pos) {
+        return {
+          x: gridLayout.bx + pos[1] * gridLayout.cell + gridLayout.cell / 2,
+          y: gridLayout.by + pos[0] * gridLayout.cell + gridLayout.cell / 2
+        };
+      }
+      function cellRect(pos) {
+        return {
+          x: gridLayout.bx + pos[1] * gridLayout.cell,
+          y: gridLayout.by + pos[0] * gridLayout.cell,
+          s: gridLayout.cell
+        };
+      }
+      function writeLabel(text, x, y, size=11, color='#f8fafc') {
+        ctx.fillStyle = color;
+        ctx.font = '900 ' + size + 'px Segoe UI';
+        ctx.textAlign = 'center';
+        ctx.fillText(text, x, y);
+        ctx.textAlign = 'left';
+      }
+      function gridBack(title, subtitle, colorA, colorB) {
+        drawArtBase(.34);
+        const g = ctx.createLinearGradient(0, 0, W, 56);
+        g.addColorStop(0, colorA);
+        g.addColorStop(1, 'rgba(2,6,23,.35)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0,0,W,56);
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '900 22px Segoe UI';
+        ctx.fillText(title, 42, 28);
+        ctx.fillStyle = 'rgba(226,232,240,.78)';
+        ctx.font = '800 12px Segoe UI';
+        ctx.fillText(subtitle, 250, 28);
+      }
+      function drawPacAgent(px, py) {
+        const mouth = [Math.PI*1.75, Math.PI*0.25, Math.PI*0.75, Math.PI*1.25][grid.dir];
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.arc(px, py, 20, mouth + 0.38, mouth + Math.PI*2 - 0.38);
+        ctx.closePath();
+        ctx.fillStyle = cfg.colors.agent;
+        ctx.fill();
+        ctx.fillStyle = '#111827';
+        ctx.beginPath(); ctx.arc(px + 4, py - 8, 3, 0, Math.PI*2); ctx.fill();
+      }
+      function drawGhost(px, py, color='#fb7185') {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(px - 17, py + 16);
+        ctx.lineTo(px - 17, py - 3);
+        ctx.quadraticCurveTo(px - 17, py - 22, px, py - 22);
+        ctx.quadraticCurveTo(px + 17, py - 22, px + 17, py - 3);
+        ctx.lineTo(px + 17, py + 16);
+        ctx.lineTo(px + 10, py + 10);
+        ctx.lineTo(px + 4, py + 16);
+        ctx.lineTo(px - 4, py + 10);
+        ctx.lineTo(px - 10, py + 16);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(px - 6, py - 8, 4, 0, Math.PI*2); ctx.arc(px + 7, py - 8, 4, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#111827';
+        ctx.beginPath(); ctx.arc(px - 5, py - 7, 2, 0, Math.PI*2); ctx.arc(px + 8, py - 7, 2, 0, Math.PI*2); ctx.fill();
+      }
+      function drawBurglar(px, py) {
+        ctx.fillStyle = '#111827';
+        ctx.beginPath(); ctx.arc(px, py - 8, 13, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#e5e7eb';
+        ctx.fillRect(px - 10, py - 12, 20, 6);
+        ctx.fillStyle = '#111827';
+        ctx.beginPath(); ctx.arc(px - 5, py - 9, 2, 0, Math.PI * 2); ctx.arc(px + 5, py - 9, 2, 0, Math.PI * 2); ctx.fill();
+        rr(px - 12, py + 5, 24, 24, 8, '#7c3aed', '#e9d5ff');
+        ctx.strokeStyle = '#e9d5ff'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(px-12,py+14); ctx.lineTo(px-23,py+22); ctx.moveTo(px+12,py+14); ctx.lineTo(px+23,py+22); ctx.stroke();
+      }
+      function drawRobot(px, py) {
+        rr(px - 16, py - 16, 32, 32, 7, '#14b8a6', '#ccfbf1');
+        ctx.fillStyle = '#022c22';
+        ctx.fillRect(px - 8, py - 5, 5, 5);
+        ctx.fillRect(px + 3, py - 5, 5, 5);
+        ctx.strokeStyle = '#ccfbf1'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(px - 12, py + 9); ctx.lineTo(px + 12, py + 9); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(px, py - 16); ctx.lineTo(px, py - 25); ctx.stroke();
+        ctx.beginPath(); ctx.arc(px, py - 28, 4, 0, Math.PI * 2); ctx.fillStyle = '#facc15'; ctx.fill();
+      }
+      function drawBomberman(px, py) {
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath(); ctx.arc(px, py - 7, 17, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 4; ctx.stroke();
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(px - 9, py - 13, 7, 7);
+        ctx.fillRect(px + 3, py - 13, 7, 7);
+        rr(px - 14, py + 8, 28, 22, 7, '#14b8a6', '#ccfbf1');
+        ctx.strokeStyle = '#facc15'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(px - 12, py + 15); ctx.lineTo(px - 25, py + 21); ctx.moveTo(px + 12, py + 15); ctx.lineTo(px + 25, py + 21); ctx.stroke();
+      }
+      function drawIceLab() {
+        const cell = gridLayout.cell, bx = gridLayout.bx, by = gridLayout.by;
+        gridBack('Pac-Man Ice Maze', 'known model / moving ghosts / slippery tiles', '#020617', '#082f49');
+        for (let r = 0; r < cfg.rows; r++) {
+          for (let c = 0; c < cfg.cols; c++) {
+            const k = r + ',' + c, x = bx + c * cell, y = by + r * cell;
+            let fill = grid.visited.has(k) ? 'rgba(18,55,101,.88)' : 'rgba(7,17,31,.78)';
+            let stroke = 'rgba(148,163,184,.18)';
+            if (grid.walls.has(k)) { fill = 'rgba(30,58,138,.94)'; stroke = '#38bdf8'; }
+            rr(x + 2, y + 2, cell - 4, cell - 4, 9, fill, stroke);
+            if (grid.slippery.has(k)) {
+              ctx.strokeStyle = '#e0f2fe'; ctx.lineWidth = 2;
+              for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(x+10, y+14+i*12); ctx.lineTo(x+cell-10, y+7+i*12); ctx.stroke(); }
+              writeLabel('ICE', x + cell / 2, y + cell - 11, 10, '#082f49');
+            }
+            if (grid.traps.has(k)) {
+              ctx.strokeStyle = '#fb7185'; ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.moveTo(x+8,y+15); ctx.lineTo(x+22,y+24); ctx.lineTo(x+15,y+38); ctx.lineTo(x+40,y+45);
+              ctx.stroke();
+              writeLabel('CRACK', x+cell/2, y+cell-9, 8, '#fecdd3');
+            }
+          }
+        }
+        drawGridObjects('ice');
+        const ghostColors = ['#fb7185', '#22d3ee', '#f97316'];
+        for (const [index, enemy] of guardPositions().entries()) {
+          const ghost = cellCenter(enemy);
+          const bob = Math.sin(grid.anim * .008 + ghost.x) * 4;
+          drawGhost(ghost.x, ghost.y + bob, ghostColors[index % ghostColors.length]);
+        }
+        const p = cellCenter(grid.pos);
+        drawPacAgent(p.x, p.y);
+        writeLabel('GHOST PHASE ' + grid.phase, 720, 28, 12, '#bae6fd');
+      }
+      function drawMuseumVault() {
+        const cell = gridLayout.cell, bx = gridLayout.bx, by = gridLayout.by;
+        gridBack('Sokoban Vault', 'push BOX onto TARGET, then enter SAFE', '#120c24', '#2e1065');
+        for (let r = 0; r < cfg.rows; r++) {
+          for (let c = 0; c < cfg.cols; c++) {
+            const k = r + ',' + c, x = bx + c * cell, y = by + r * cell;
+            let fill = (r + c) % 2 ? 'rgba(30,21,53,.78)' : 'rgba(22,15,42,.78)';
+            if (grid.visited.has(k)) fill = 'rgba(46,35,99,.90)';
+            let stroke = 'rgba(167,139,250,.16)';
+            if (grid.walls.has(k)) { fill = 'rgba(76,29,149,.94)'; stroke = '#c4b5fd'; }
+            rr(x + 3, y + 3, cell - 6, cell - 6, 4, fill, stroke);
+            if (grid.walls.has(k)) {
+              ctx.fillStyle = 'rgba(233,213,255,.28)';
+              for (let i = 0; i < 3; i++) ctx.fillRect(x + 8, y + 10 + i * 13, cell - 16, 5);
+            }
+            if (grid.slippery.has(k)) {
+              ctx.beginPath(); ctx.ellipse(x + cell/2, y + cell/2, 17, 11, -0.4, 0, Math.PI*2);
+              ctx.fillStyle = 'rgba(168,85,247,.42)'; ctx.fill();
+              writeLabel('OIL', x+cell/2, y+cell/2+4, 10, '#e9d5ff');
+            }
+            if (grid.traps.has(k)) {
+              const shift = Math.sin(grid.anim * .008 + r) * 10;
+              ctx.strokeStyle = '#fb7185'; ctx.lineWidth = 4;
+              ctx.shadowColor = '#fb7185'; ctx.shadowBlur = 10;
+              ctx.beginPath(); ctx.moveTo(x+8, y+cell/2+shift); ctx.lineTo(x+cell-8, y+cell/2-shift); ctx.stroke();
+              ctx.shadowBlur = 0;
+            }
+          }
+        }
+        for (const target of grid.targets || []) {
+          const r = cellRect(target), cx = r.x + r.s / 2, cy = r.y + r.s / 2;
+          rr(r.x + 10, r.y + 10, r.s - 20, r.s - 20, 8, 'rgba(34,197,94,.16)', '#86efac');
+          ctx.strokeStyle = '#bbf7d0'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(cx - 15, cy); ctx.lineTo(cx + 15, cy); ctx.moveTo(cx, cy - 15); ctx.lineTo(cx, cy + 15); ctx.stroke();
+          writeLabel('TARGET', cx, cy + 23, 8, '#dcfce7');
+        }
+        for (const box of grid.boxes || []) {
+          const r = cellRect(box), cx = r.x + r.s / 2, cy = r.y + r.s / 2;
+          const onTarget = (grid.targets || []).some(target => keyOf(target) === keyOf(box));
+          rr(r.x + 8, r.y + 8, r.s - 16, r.s - 16, 6, onTarget ? '#65a30d' : '#d97706', onTarget ? '#bbf7d0' : '#fde68a');
+          ctx.strokeStyle = onTarget ? '#dcfce7' : '#78350f';
+          ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(r.x + 13, r.y + 13); ctx.lineTo(r.x + r.s - 13, r.y + r.s - 13); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(r.x + r.s - 13, r.y + 13); ctx.lineTo(r.x + 13, r.y + r.s - 13); ctx.stroke();
+          writeLabel('BOX', cx, cy + 4, 11, '#111827');
+        }
+        for (const b of cfg.bonuses || []) if (!grid.bonuses.has(keyOf(b))) {
+          const r = cellRect(b), cx = r.x + r.s / 2, cy = r.y + r.s / 2;
+          ctx.beginPath(); ctx.arc(cx, cy, 15, 0, Math.PI * 2); ctx.fillStyle = '#facc15'; ctx.fill();
+          writeLabel('COIN', cx, cy + 4, 8, '#111827');
+        }
+        const safe = cellRect(cfg.goal);
+        rr(safe.x + 6, safe.y + 6, safe.s - 12, safe.s - 12, 10, '#16a34a', '#bbf7d0');
+        ctx.beginPath(); ctx.arc(safe.x + safe.s / 2, safe.y + safe.s / 2, 10, 0, Math.PI * 2);
+        ctx.strokeStyle = '#052e16'; ctx.lineWidth = 4; ctx.stroke();
+        writeLabel('SAFE', safe.x + safe.s / 2, safe.y + safe.s - 12, 10, '#dcfce7');
+        const p = cellCenter(grid.pos);
+        rr(p.x - 14, p.y - 11, 28, 30, 9, '#facc15', '#111827');
+        rr(p.x - 16, p.y - 22, 32, 10, 5, '#a78bfa', '#e9d5ff');
+        ctx.fillStyle = '#111827';
+        ctx.fillRect(p.x - 6, p.y - 2, 4, 4);
+        ctx.fillRect(p.x + 4, p.y - 2, 4, 4);
+        ctx.strokeStyle = '#fde68a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+        ctx.beginPath();
+        if (grid.dir === 1) { ctx.moveTo(p.x+12, p.y+7); ctx.lineTo(p.x+25, p.y+5); }
+        else if (grid.dir === 3) { ctx.moveTo(p.x-12, p.y+7); ctx.lineTo(p.x-25, p.y+5); }
+        else { ctx.moveTo(p.x-10, p.y+9); ctx.lineTo(p.x+10, p.y+9); }
+        ctx.stroke();
+        const scannerX = bx + 30 + ((grid.anim * .08) % (cell * 9));
+        const scannerY = by + cell * 4.45;
+        ctx.beginPath(); ctx.arc(scannerX, scannerY, 12, 0, Math.PI*2);
+        ctx.fillStyle = '#fb7185'; ctx.fill();
+        ctx.strokeStyle = '#fecdd3'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(scannerX, scannerY+12); ctx.lineTo(scannerX, scannerY+38);
+        ctx.strokeStyle = 'rgba(251,113,133,.5)'; ctx.lineWidth = 5; ctx.stroke();
+      }
+      function drawReactorCore() {
+        const cell = gridLayout.cell, bx = gridLayout.bx, by = gridLayout.by;
+        gridBack('Bomberman Reactor', 'bomb maze / cores / warp tunnels', '#02130f', '#042f2e');
+        for (let r = 0; r < cfg.rows; r++) {
+          for (let c = 0; c < cfg.cols; c++) {
+            const k = r + ',' + c, x = bx + c * cell, y = by + r * cell;
+            let fill = grid.visited.has(k) ? 'rgba(18,61,55,.90)' : ((r + c) % 2 ? 'rgba(5,34,29,.78)' : 'rgba(4,20,17,.78)');
+            let stroke = 'rgba(45,212,191,.14)';
+            if (grid.walls.has(k)) { fill = 'rgba(15,118,110,.94)'; stroke = '#99f6e4'; }
+            rr(x + 2, y + 2, cell - 4, cell - 4, 6, fill, stroke);
+            if (grid.walls.has(k)) {
+              ctx.fillStyle = 'rgba(204,251,241,.22)';
+              ctx.fillRect(x + 8, y + 11, cell - 16, 7);
+              ctx.fillRect(x + 14, y + 29, cell - 22, 7);
+            } else {
+              ctx.strokeStyle = 'rgba(45,212,191,.08)'; ctx.lineWidth = 1;
+              ctx.beginPath(); ctx.moveTo(x+cell/2, y+7); ctx.lineTo(x+cell/2, y+cell-7); ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(x+7, y+cell/2); ctx.lineTo(x+cell-7, y+cell/2); ctx.stroke();
+            }
+            if (grid.slippery.has(k)) {
+              ctx.beginPath(); ctx.arc(x+cell/2, y+cell/2, 18, 0, Math.PI*2);
+              ctx.fillStyle = 'rgba(20,184,166,.45)'; ctx.fill();
+              writeLabel('SLIME', x+cell/2, y+cell/2+4, 8, '#ccfbf1');
+            }
+            if (grid.traps.has(k)) {
+              const cx = x + cell / 2, cy = y + cell / 2;
+              const blast = 17 + Math.sin(grid.anim * .012 + r + c) * 8;
+              ctx.strokeStyle = 'rgba(251,146,60,.72)';
+              ctx.lineWidth = 6;
+              ctx.beginPath(); ctx.moveTo(cx - blast, cy); ctx.lineTo(cx + blast, cy); ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(cx, cy - blast); ctx.lineTo(cx, cy + blast); ctx.stroke();
+              ctx.fillStyle = '#111827';
+              ctx.beginPath(); ctx.arc(cx, cy, 15, 0, Math.PI * 2); ctx.fill();
+              ctx.strokeStyle = '#fed7aa'; ctx.lineWidth = 3; ctx.stroke();
+              ctx.strokeStyle = '#facc15'; ctx.lineWidth = 3;
+              ctx.beginPath(); ctx.moveTo(cx + 8, cy - 12); ctx.quadraticCurveTo(cx + 23, cy - 26, cx + 12, cy - 31); ctx.stroke();
+              ctx.fillStyle = '#fb923c';
+              ctx.beginPath();
+              for (let i = 0; i < 8; i++) {
+                const a = i * Math.PI / 4;
+                const rad = i % 2 ? 5 : 10;
+                const px = cx + 23 + Math.cos(a) * rad;
+                const py = cy - 27 + Math.sin(a) * rad;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              }
+              ctx.closePath(); ctx.fill();
+            }
+          }
+        }
+        drawGridObjects('reactor');
+        const p = cellCenter(grid.pos);
+        drawBomberman(p.x, p.y);
+      }
+      function drawGridObjects(style) {
+        function badge(pos, text, fill, color='#f8fafc') {
+          const r = cellRect(pos), cx = r.x + r.s/2, cy = r.y + r.s/2;
+          if (style === 'reactor' && text.startsWith('C')) {
+            ctx.beginPath(); ctx.arc(cx, cy, 19, 0, Math.PI * 2);
+            ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = '#fef9c3'; ctx.lineWidth = 3; ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fillStyle = '#0f172a'; ctx.fill();
+          } else if (style === 'museum' && text === (cfg.labels.key || 'KEY')) {
+            rr(cx-20, cy-13, 40, 26, 5, fill, '#fef9c3');
+            ctx.fillStyle = '#111827'; ctx.fillRect(cx-14, cy-4, 28, 3);
+          } else {
+            rr(r.x+8, r.y+8, r.s-16, r.s-16, 12, fill, '#f8fafc');
+          }
+          writeLabel(text, cx, cy+4, style === 'reactor' ? 10 : 11, color);
+        }
+        badge(cfg.goal, cfg.goalLabel, '#16a34a');
+        for (let i = 0; i < grid.keys.length; i++) {
+          if (!grid.collected.has(i)) badge(grid.keys[i], cfg.kind === 'q_learning' ? 'C' + (i+1) : (cfg.labels.key || 'KEY'), cfg.colors.key, '#111827');
+        }
+        for (const b of cfg.bonuses || []) if (!grid.bonuses.has(keyOf(b))) badge(b, cfg.labels.bonus || 'BON', '#f59e0b', '#111827');
+        for (const p of cfg.portals || []) {
+          const r = cellRect(p.from), cx = r.x+r.s/2, cy = r.y+r.s/2;
+          ctx.beginPath(); ctx.arc(cx, cy, 21, 0, Math.PI*2); ctx.strokeStyle = cfg.colors.portal; ctx.lineWidth = 5; ctx.stroke();
+          ctx.beginPath(); ctx.arc(cx, cy, 11, 0, Math.PI*2); ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 3; ctx.stroke();
+          writeLabel(cfg.labels.portal || 'WARP', cx, cy+4, 8);
+        }
+        for (const g of guardPositions()) {
+          const r = cellRect(g), cx = r.x+r.s/2, cy = r.y+r.s/2;
+          if (style === 'reactor') {
+            ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI*2); ctx.fillStyle = '#ea580c'; ctx.fill();
+            ctx.strokeStyle = '#fed7aa'; ctx.lineWidth = 3; ctx.stroke();
+            ctx.fillStyle = '#111827'; ctx.fillRect(cx-8, cy-5, 16, 10);
+          } else {
+            rr(cx-18, cy-16, 36, 32, 10, '#ea580c', '#fed7aa');
+            writeLabel(cfg.labels.guard || 'SEC', cx, cy+4, 10);
+          }
+        }
+      }
+      function drawGrid() {
+        if (cfg.kind === 'sarsa') drawMuseumVault();
+        else if (cfg.kind === 'q_learning') drawReactorCore();
+        else drawIceLab();
+        updateStats(grid.score, grid.steps, grid.won ? 'WON' : 'PLAYING', grid.message);
+      }
+
+      let cont = null;
+      const input = {vx: 0, vy: 0, left:false, right:false, up:false, down:false};
+      function rand(min,max){ return min + Math.random() * (max-min); }
+      function initContinuous() {
+        cont = {
+          x: cfg.start[0], y: cfg.start[1], vx: 0, vy: 0,
+          score: 0, steps: 0, won: false, message: 'Choose a discrete velocity and reach ' + cfg.goalLabel + ' quickly.',
+          path: [], obstacles: [], teleports: [], meteors: [], cooldown: 0
+        };
+        if (cfg.teleportMode) {
+          for (let i = 0; i < cfg.teleportCount; i++) {
+            cont.teleports.push({x: rand(1.2, 8.8), y: rand(1.2, 8.8), pulse: Math.random() * Math.PI * 2});
+          }
+          cont.message = 'Step into a portal to jump to a random location. Use jumps to reach EXIT.';
+        } else if (cfg.obstacleMode) {
+          for (let i = 0; i < cfg.obstacleCount; i++) {
+            const axis = Math.random() < .5 ? 0 : 1;
+            const direction = Math.random() < .5 ? -1 : 1;
+            cont.obstacles.push({x: rand(1.4, 8.6), y: rand(1.4, 8.6), axis, direction, dx: axis===0?direction:0, dy: axis===1?direction:0});
+          }
+          cont.message = 'Portal hazards move. Observe forward and reach EXIT.';
+        } else {
+          cont.message = 'Choose one of nine discrete velocities every 0.02 seconds and reach PAD.';
+        }
+      }
+      function setVector(vx, vy) { input.vx = vx; input.vy = vy; canvas.focus(); }
+      function inHazard(x,y) {
+        return cfg.hazards.some(h => x >= h[0] && x <= h[2] && y >= h[1] && y <= h[3]);
+      }
+      function continuousCanvasPoint(x, y) {
+        if (cfg.teleportMode) {
+          return {x: 55 + x / cfg.roomSize * 610, y: 70 + 470 - y / cfg.roomSize * 470};
+        }
+        const map = arenaMap();
+        return {x: map.toX(x), y: map.toY(y)};
+      }
+      function stepContinuous() {
+        if (!cont || cont.won) return;
+        let vx = input.vx || ((input.right?1:0) - (input.left?1:0));
+        let vy = input.vy || ((input.up?1:0) - (input.down?1:0));
+        cont.vx = vx; cont.vy = vy;
+        const oldDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
+        const speed = 0.02;
+        const rawX = cont.x + vx * speed, rawY = cont.y + vy * speed;
+        if (rawX < 0 || rawX > cfg.roomSize || rawY < 0 || rawY > cfg.roomSize) cont.score += cfg.wallPenalty;
+        cont.x = clamp(rawX, 0, cfg.roomSize);
+        cont.y = clamp(rawY, 0, cfg.roomSize);
+        cont.steps += 1;
+        const newDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
+        cont.score += cfg.stepReward + cfg.progressScale * (oldDist - newDist);
+        if (inHazard(cont.x, cont.y)) { cont.score += cfg.hazardPenalty; cont.message = 'Danger zone. Get out.'; }
+        if (cfg.obstacleMode) {
+          const half = cfg.obstacleWidth / 2;
+          for (const o of cont.obstacles) {
+            o.x += o.dx * 0.01; o.y += o.dy * 0.01;
+            if (o.x < .7 || o.x > 9.3) o.dx *= -1;
+            if (o.y < .7 || o.y > 9.3) o.dy *= -1;
+            if (Math.abs(cont.x-o.x) < half && Math.abs(cont.y-o.y) < half) {
+              const collision = continuousCanvasPoint(cont.x, cont.y);
+              emitBurst(collision.x, collision.y, '#f97316', 30);
+              const collisionDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
+              cont.score += cfg.obstaclePenalty; cont.x = cfg.start[0]; cont.y = cfg.start[1];
+              cont.vx = 0; cont.vy = 0;
+              const resetDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
+              cont.score += cfg.progressScale * (collisionDist - resetDist);
+              cont.message = 'Portal collision. Teleported back to start.';
+            }
+          }
+        }
+        if (cfg.teleportMode) {
+          cont.cooldown = Math.max(0, cont.cooldown - 1);
+          if (cont.steps % 180 === 0) {
+            for (const t of cont.teleports) { t.x = rand(1.0, 9.0); t.y = rand(1.0, 9.0); }
+            cont.message = 'Portal gates reshuffled.';
+          }
+          for (const t of cont.teleports) {
+            if (cont.cooldown === 0 && Math.hypot(cont.x - t.x, cont.y - t.y) < 0.38) {
+              if (Math.random() < 0.72 && cont.teleports.length > 1) {
+                const other = cont.teleports[Math.floor(Math.random() * cont.teleports.length)];
+                cont.x = clamp(other.x + rand(-0.35, 0.35), 0, cfg.roomSize);
+                cont.y = clamp(other.y + rand(-0.35, 0.35), 0, cfg.roomSize);
+                cont.message = 'Teleport jump! You landed near another gate.';
+              } else {
+                cont.x = rand(0.6, 9.4);
+                cont.y = rand(0.6, 9.4);
+                cont.message = 'Unstable teleport! Random landing point.';
+              }
+              const arrival = continuousCanvasPoint(cont.x, cont.y);
+              emitBurst(arrival.x, arrival.y, '#c084fc', 34);
+              cont.score += 7;
+              cont.cooldown = 45;
+              break;
+            }
+          }
+        }
+        const dist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
+        if (dist <= cfg.goalRadius) {
+          cont.score += cfg.goalReward;
+          cont.won = true;
+          const goalBurst = continuousCanvasPoint(cont.x, cont.y);
+          emitBurst(goalBurst.x, goalBurst.y, '#86efac', 52);
+          cont.message = cfg.teleportMode ? 'Portal exit reached. Room cleared.' : 'Touchdown complete. Room cleared.';
+        }
+        if (cont.steps % 3 === 0) cont.path.push([cont.x, cont.y]);
+      }
+      function arenaMap() {
+        const bx = 150, by = 48, bw = 520, bh = 520;
+        return {
+          bx, by, bw, bh,
+          toX: x => bx + x / cfg.roomSize * bw,
+          toY: y => by + bh - y / cfg.roomSize * bh
+        };
+      }
+      function animTick() {
+        return cont && cont.anim ? cont.anim / 16.67 : (cont ? cont.steps : 0);
+      }
+      function drawDrone(px, py) {
+        ctx.save();
+        ctx.translate(px, py);
+        const tilt = (cont.vx || 0) * 0.16;
+        ctx.rotate(tilt);
+        ctx.fillStyle = '#e0f2fe';
+        ctx.beginPath();
+        ctx.moveTo(0, -27);
+        ctx.lineTo(21, 20);
+        ctx.lineTo(-21, 20);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 4; ctx.stroke();
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath(); ctx.arc(0, -4, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#e0f2fe'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(-14, 19); ctx.lineTo(-27, 33); ctx.moveTo(14, 19); ctx.lineTo(27, 33); ctx.stroke();
+        if (cont.vx !== 0 || cont.vy !== 0) {
+          ctx.fillStyle = '#fb923c';
+          ctx.beginPath(); ctx.moveTo(-8, 23); ctx.lineTo(0, 46 + Math.sin(animTick() * .5) * 6); ctx.lineTo(8, 23); ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+      }
+      function drawRunner(px, py) {
+        ctx.strokeStyle = cfg.colors.agent; ctx.lineWidth = 5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(px, py-22, 10, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(px,py-10); ctx.lineTo(px,py+20); ctx.stroke();
+        const swing = Math.sin(animTick()*.35) * 12;
+        ctx.beginPath(); ctx.moveTo(px,py+2); ctx.lineTo(px-18,py+8+swing); ctx.moveTo(px,py+2); ctx.lineTo(px+18,py+8-swing); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(px,py+20); ctx.lineTo(px-16,py+42-swing); ctx.moveTo(px,py+20); ctx.lineTo(px+18,py+42+swing); ctx.stroke();
+      }
+      function drawDroneLanding() {
+        drawArtBase(.18);
+        ctx.fillStyle = 'rgba(2,6,23,.66)';
+        ctx.fillRect(0,0,W,48);
+        ctx.fillStyle = '#e0f2fe';
+        ctx.font = '900 22px Segoe UI';
+        ctx.fillText('Lunar Lander Pad', 42, 28);
+        ctx.fillStyle = 'rgba(147,197,253,.75)';
+        ctx.font = '800 12px Segoe UI';
+        ctx.fillText('continuous position / discrete velocity / landing pad', 270, 28);
+        const m = arenaMap();
+        rr(m.bx, m.by, m.bw, m.bh, 18, 'rgba(7,26,48,.44)', '#60a5fa');
+        for (let i=0;i<55;i++) {
+          const x = m.bx + ((i*97 + animTick()*0.2) % m.bw);
+          const y = m.by + ((i*53) % m.bh);
+          ctx.fillStyle = i % 5 === 0 ? 'rgba(147,197,253,.35)' : 'rgba(226,232,240,.18)';
+          ctx.fillRect(x, y, 2, 2);
+        }
+        for (const h of cfg.hazards) {
+          const x = m.toX(h[0]), y = m.toY(h[3]), w = (h[2]-h[0])/cfg.roomSize*m.bw, hh = (h[3]-h[1])/cfg.roomSize*m.bh;
+          rr(x, y, w, hh, 16, 'rgba(239,68,68,.24)', '#ef4444');
+          for (let i=0;i<5;i++) {
+            ctx.beginPath();
+            ctx.arc(x + 18 + (i * 37) % Math.max(38, w - 20), y + 14 + (i * 23) % Math.max(28, hh - 16), 8 + (i % 2) * 4, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(248,113,113,.65)';
+            ctx.fill();
+          }
+          writeLabel('METEORS', x+w/2, y+hh/2+4, 11, '#fecaca');
+        }
+        for (const meteor of cont.meteors) {
+          const mx = m.toX(meteor.x), my = m.toY(meteor.y);
+          const mr = meteor.r / cfg.roomSize * m.bw;
+          ctx.beginPath(); ctx.arc(mx, my, mr + 5, 0, Math.PI*2);
+          ctx.fillStyle = 'rgba(251,146,60,.18)'; ctx.fill();
+          ctx.beginPath(); ctx.arc(mx, my, mr, 0, Math.PI*2);
+          ctx.fillStyle = '#9a3412'; ctx.fill(); ctx.strokeStyle = '#fdba74'; ctx.lineWidth = 3; ctx.stroke();
+          ctx.beginPath(); ctx.arc(mx-mr*.25, my-mr*.18, Math.max(2,mr*.22), 0, Math.PI*2);
+          ctx.fillStyle = '#431407'; ctx.fill();
+        }
+        ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 3; ctx.beginPath();
+        cont.path.forEach((p, i) => { const x = m.toX(p[0]), y = m.toY(p[1]); if (i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+        ctx.stroke();
+        const gx = m.toX(cfg.goal[0]), gy = m.toY(cfg.goal[1]);
+        ctx.beginPath(); ctx.arc(gx, gy, cfg.goalRadius/cfg.roomSize*m.bw*1.5, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(34,197,94,.28)'; ctx.fill(); ctx.strokeStyle = '#86efac'; ctx.lineWidth = 4; ctx.stroke();
+        ctx.strokeStyle = '#bbf7d0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(gx-34,gy); ctx.lineTo(gx+34,gy); ctx.moveTo(gx,gy-34); ctx.lineTo(gx,gy+34); ctx.stroke();
+        writeLabel('PAD', gx, gy+5, 13, '#dcfce7');
+        drawDrone(m.toX(cont.x), m.toY(cont.y));
+        const dist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
+        updateStats(cont.score, cont.steps, cont.won ? 'LANDED' : (dist < 2 ? 'FINAL' : 'DESCENT'), cont.message + ' Distance: ' + dist.toFixed(2) + 'm');
+      }
+      function drawMovingBlocks() {
+        drawArtBase(.22);
+        ctx.fillStyle = 'rgba(2,6,23,.68)';
+        ctx.fillRect(0,0,W,48);
+        ctx.fillStyle = '#f5f3ff';
+        ctx.font = '900 22px Segoe UI';
+        ctx.fillText('Portal Hazard Run', 42, 28);
+        ctx.fillStyle = 'rgba(221,214,254,.82)';
+        ctx.font = '800 12px Segoe UI';
+        ctx.fillText('moving 0.5m hazards / forward X-meter sensor', 270, 28);
+        const bx = 55, by = 70, bw = 610, bh = 470;
+        rr(bx, by, bw, bh, 22, 'rgba(22,10,42,.44)', '#a855f7');
+        ctx.fillStyle = 'rgba(34,211,238,.10)';
+        for (let i=0;i<9;i++) ctx.fillRect(bx+i*bw/9, by, 2, bh);
+        const toX = x => bx + x/cfg.roomSize*bw;
+        const toY = y => by + bh - y/cfg.roomSize*bh;
+        for (const h of cfg.hazards) {
+          const x = toX(h[0]), y = toY(h[3]), w = (h[2]-h[0])/cfg.roomSize*bw, hh = (h[3]-h[1])/cfg.roomSize*bh;
+          rr(x, y, w, hh, 8, 'rgba(220,38,38,.42)', '#fca5a5');
+          writeLabel('HOT', x+w/2, y+hh/2+4, 11, '#fee2e2');
+        }
+        for (const o of cont.obstacles) {
+          const x = toX(o.x), y = toY(o.y);
+          const radius = Math.max(13, cfg.obstacleWidth / cfg.roomSize * bw / 2);
+          const pulse = radius + 6 + Math.sin(animTick() * .10 + o.x) * 4;
+          const grad = ctx.createRadialGradient(x, y, 3, x, y, pulse + 10);
+          grad.addColorStop(0, 'rgba(34,211,238,.96)');
+          grad.addColorStop(.5, 'rgba(168,85,247,.58)');
+          grad.addColorStop(1, 'rgba(168,85,247,0)');
+          ctx.beginPath(); ctx.arc(x, y, pulse + 10, 0, Math.PI*2); ctx.fillStyle = grad; ctx.fill();
+          ctx.beginPath(); ctx.arc(x, y, pulse, 0, Math.PI*2); ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 4; ctx.stroke();
+        }
+        const gx = toX(cfg.goal[0]), gy = toY(cfg.goal[1]);
+        rr(gx-32, gy-32, 64, 64, 12, 'rgba(34,197,94,.28)', '#86efac');
+        writeLabel('EXIT', gx, gy+5, 13, '#dcfce7');
+        ctx.strokeStyle = '#fb923c'; ctx.lineWidth = 3; ctx.beginPath();
+        cont.path.forEach((p, i) => { const x = toX(p[0]), y = toY(p[1]); if (i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+        ctx.stroke();
+        const px = toX(cont.x), py = toY(cont.y);
+        const heading = Math.atan2(-cont.vy, cont.vx || 0.0001);
+        ctx.beginPath(); ctx.moveTo(px, py);
+        ctx.arc(px, py, cfg.observationRange/cfg.roomSize*bw, heading - .55, heading + .55);
+        ctx.closePath(); ctx.fillStyle = 'rgba(56,189,248,.08)'; ctx.fill();
+        drawRunner(px, py);
+        const dist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
+        const hx = cont.vx || (cfg.goal[0] - cont.x), hy = cont.vy || (cfg.goal[1] - cont.y);
+        const visible = cont.obstacles.some(o => {
+          const dx=o.x-cont.x, dy=o.y-cont.y;
+          return Math.hypot(dx,dy) <= cfg.observationRange && dx*hx + dy*hy > 0;
+        });
+        updateStats(cont.score, cont.steps, cont.won ? 'ESCAPED' : (visible ? 'PORTAL AHEAD' : 'SEARCHING'), cont.message + ' Distance: ' + dist.toFixed(2) + 'm');
+      }
+      function drawTeleportRush() {
+        drawArtBase(.20);
+        ctx.fillStyle = 'rgba(2,6,23,.66)';
+        ctx.fillRect(0,0,W,48);
+        ctx.fillStyle = '#f5f3ff';
+        ctx.font = '900 22px Segoe UI';
+        ctx.fillText('Portal Teleport Run', 42, 28);
+        ctx.fillStyle = 'rgba(221,214,254,.82)';
+        ctx.font = '800 12px Segoe UI';
+        ctx.fillText('portal gates / random exits / local sensor', 285, 28);
+        const bx = 55, by = 70, bw = 610, bh = 470;
+        rr(bx, by, bw, bh, 22, 'rgba(22,10,42,.42)', '#a855f7');
+        for (let i = 0; i < 70; i++) {
+          const x = bx + ((i * 83 + animTick() * 0.35) % bw);
+          const y = by + ((i * 47) % bh);
+          ctx.fillStyle = i % 6 === 0 ? 'rgba(34,211,238,.42)' : 'rgba(221,214,254,.18)';
+          ctx.fillRect(x, y, 2, 2);
+        }
+        const toX = x => bx + x/cfg.roomSize*bw;
+        const toY = y => by + bh - y/cfg.roomSize*bh;
+        for (const h of cfg.hazards) {
+          const x = toX(h[0]), y = toY(h[3]), w = (h[2]-h[0])/cfg.roomSize*bw, hh = (h[3]-h[1])/cfg.roomSize*bh;
+          rr(x, y, w, hh, 10, 'rgba(220,38,38,.32)', '#fca5a5');
+          writeLabel('VOID', x+w/2, y+hh/2+4, 11, '#fee2e2');
+        }
+        ctx.strokeStyle = '#c084fc'; ctx.lineWidth = 3; ctx.beginPath();
+        cont.path.forEach((p, i) => { const x = toX(p[0]), y = toY(p[1]); if (i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+        ctx.stroke();
+        for (const [i, t] of cont.teleports.entries()) {
+          const x = toX(t.x), y = toY(t.y);
+          const pulse = 18 + Math.sin(animTick() * 0.11 + t.pulse) * 5;
+          const grad = ctx.createRadialGradient(x, y, 4, x, y, pulse + 10);
+          grad.addColorStop(0, 'rgba(34,211,238,.95)');
+          grad.addColorStop(.5, 'rgba(168,85,247,.55)');
+          grad.addColorStop(1, 'rgba(168,85,247,0)');
+          ctx.beginPath(); ctx.arc(x, y, pulse + 10, 0, Math.PI*2); ctx.fillStyle = grad; ctx.fill();
+          ctx.beginPath(); ctx.arc(x, y, pulse, 0, Math.PI*2); ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 4; ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, pulse * .55, 0, Math.PI*2); ctx.strokeStyle = '#f0abfc'; ctx.lineWidth = 3; ctx.stroke();
+          writeLabel('T' + (i+1), x, y+4, 10, '#fdf4ff');
+        }
+        const gx = toX(cfg.goal[0]), gy = toY(cfg.goal[1]);
+        rr(gx-34, gy-34, 68, 68, 16, 'rgba(34,197,94,.30)', '#86efac');
+        writeLabel('EXIT', gx, gy+5, 13, '#dcfce7');
+        const px = toX(cont.x), py = toY(cont.y);
+        ctx.beginPath();
+        ctx.arc(px, py, cfg.observationRange/cfg.roomSize*bw, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(34,211,238,.07)';
+        ctx.fill();
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(animTick() * 0.06);
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = i * Math.PI / 3;
+          const rad = i % 2 ? 14 : 24;
+          const x = Math.cos(a) * rad;
+          const y = Math.sin(a) * rad;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = cfg.colors.agent;
+        ctx.fill();
+        ctx.strokeStyle = '#111827';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.restore();
+        const dist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
+        const visible = cont.teleports.some(t => Math.hypot(t.x-cont.x, t.y-cont.y) <= cfg.observationRange);
+        updateStats(cont.score, cont.steps, cont.won ? 'ESCAPED' : (visible ? 'PORTAL NEAR' : 'SEARCHING'), cont.message + ' Distance: ' + dist.toFixed(2) + 'm');
+      }
+      function drawContinuous() {
+        if (cfg.teleportMode) drawTeleportRush();
+        else if (cfg.obstacleMode) drawMovingBlocks();
+        else drawDroneLanding();
+      }
+      function draw() {
+        if (cfg.mode === 'grid') drawGrid();
+        else drawContinuous();
+        drawParticles();
+        if (!cfg.replay && !resultShown) {
+          const won = cfg.mode === 'grid' ? Boolean(grid && grid.won) : Boolean(cont && cont.won);
+          if (won) {
+            resultShown = true;
+            gamePaused = true;
+            showGameOverlay('MISSION COMPLETE', cfg.goalLabel + ' REACHED', 'Excellent run. Your score improves when you finish in fewer moves.', 'PLAY AGAIN');
+          }
+        }
+      }
+      let replayIndex = 0;
+      let replayPlaying = false;
+      let replayDelay = 450;
+      let replayLastTick = 0;
+      let replayDecorLast = 0;
+      function applyReplayFrame(index) {
+        if (!cfg.replay || !cfg.replay.states.length) return;
+        replayIndex = clamp(index, 0, cfg.replay.states.length - 1);
+        const state = cfg.replay.states[replayIndex];
+        const score = cfg.replay.scores[replayIndex] || 0;
+        const atEnd = replayIndex === cfg.replay.states.length - 1;
+        if (cfg.mode === 'grid') {
+          grid.pos = [state[0], state[1]];
+          grid.phase = cfg.kind === 'sarsa' ? 0 : (state[3] || 0);
+          grid.score = score;
+          grid.steps = replayIndex;
+          grid.won = atEnd && cfg.replay.success;
+          grid.collected = new Set();
+          const mask = cfg.kind === 'sarsa' ? 0 : (state[2] || 0);
+          for (let i = 0; i < grid.keys.length; i++) if (mask & (1 << i)) grid.collected.add(i);
+          grid.visited = new Set(cfg.replay.states.slice(0, replayIndex + 1).map(s => s[0] + ',' + s[1]));
+          if (cfg.kind === 'sarsa') grid.boxes = [[state[2], state[3]]];
+          const action = cfg.replay.actions[replayIndex];
+          if (action >= 0 && action <= 3) grid.dir = action;
+          grid.message = atEnd
+            ? (cfg.replay.success ? 'Episode finished successfully.' : 'Episode ended before the goal.')
+            : 'Agent action ' + (action < 0 ? 'START' : ['UP','RIGHT','DOWN','LEFT'][action]) + '.';
+        } else {
+          cont.x = state[0]; cont.y = state[1];
+          cont.vx = state[2] || 0; cont.vy = state[3] || 0;
+          if (cfg.replay.obstacles && cfg.replay.obstacles[replayIndex]) {
+            cont.obstacles = cfg.replay.obstacles[replayIndex].map(item => ({x:item[0], y:item[1], axis:item[2], direction:item[3], dx:item[2]===0?item[3]:0, dy:item[2]===1?item[3]:0}));
+          }
+          cont.score = score;
+          cont.steps = replayIndex;
+          cont.won = atEnd && cfg.replay.success;
+          cont.path = cfg.replay.states.slice(0, replayIndex + 1).map(s => [s[0], s[1]]);
+          cont.message = atEnd
+            ? (cfg.replay.success ? 'Episode finished successfully.' : 'Episode ended before the goal.')
+            : 'Replaying the agent path.';
+        }
+        const timeline = root.querySelector('#replayTimeline');
+        if (timeline) timeline.value = replayIndex;
+        const toggle = root.querySelector('#replayToggle');
+        if (toggle) toggle.textContent = replayPlaying ? 'PAUSE' : 'PLAY';
+      }
+      function stepReplay(now) {
+        if (!cfg.replay || !replayPlaying) return;
+        if (!replayLastTick) replayLastTick = now;
+        if (now - replayLastTick < replayDelay) return;
+        replayLastTick = now;
+        if (replayIndex >= cfg.replay.states.length - 1) {
+          replayPlaying = false;
+          applyReplayFrame(replayIndex);
+          return;
+        }
+        applyReplayFrame(replayIndex + 1);
+      }
+      function updateReplayDecor(now) {
+        if (!cont) return;
+        cont.anim = now;
+        if (!replayDecorLast) replayDecorLast = now;
+        const scale = Math.min(2, (now - replayDecorLast) / 16.67);
+        replayDecorLast = now;
+        for (const meteor of cont.meteors || []) {
+          meteor.x += meteor.dx * scale;
+          meteor.y += meteor.dy * scale;
+          if (meteor.x < .5 || meteor.x > 9.5) meteor.dx *= -1;
+          if (meteor.y < .5 || meteor.y > 9.5) meteor.dy *= -1;
+        }
+      }
+      function loop(now) {
+        if (cfg.replay) {
+          stepReplay(now);
+          if (cfg.mode === 'grid') updateGridWorld(now);
+          else updateReplayDecor(now);
+        } else if (!gameStarted || gamePaused) {
+          // Keep rendering the live scene while the start or pause overlay is open.
+        } else if (cfg.mode === 'continuous') {
+          cont.anim = now;
+          stepContinuous();
+        }
+        else updateGridWorld(now);
+        draw();
+        requestAnimationFrame(loop);
+      }
+      root.querySelector('#resetBtn').addEventListener('click', () => {
+        cfg.mode === 'grid' ? initGrid() : initContinuous();
+        resultShown = false;
+        gamePaused = false;
+        if (cfg.replay) {
+          replayIndex = 0; replayPlaying = true; replayLastTick = 0; applyReplayFrame(0);
+        } else {
+          gameStarted = true;
+          hideGameOverlay();
+          pauseBtn.textContent = 'PAUSE';
+          canvas.focus();
+        }
+        draw();
+      });
+      overlayAction.addEventListener('click', () => {
+        if (resultShown) {
+          cfg.mode === 'grid' ? initGrid() : initContinuous();
+          resultShown = false;
+        }
+        gameStarted = true;
+        gamePaused = false;
+        pauseBtn.textContent = 'PAUSE';
+        hideGameOverlay();
+        canvas.focus();
+      });
+      pauseBtn.addEventListener('click', () => {
+        if (cfg.replay || !gameStarted) return;
+        gamePaused = !gamePaused;
+        pauseBtn.textContent = gamePaused ? 'RESUME' : 'PAUSE';
+        if (gamePaused) showGameOverlay('GAME PAUSED', cfg.title, 'Your run is frozen. Resume when you are ready.', 'RESUME');
+        else { hideGameOverlay(); canvas.focus(); }
+      });
+      root.querySelectorAll('[data-grid]').forEach(btn => btn.addEventListener('click', () => moveGrid(Number(btn.dataset.grid))));
+      root.querySelectorAll('[data-v]').forEach(btn => {
+        const [vx,vy] = btn.dataset.v.split(',').map(Number);
+        btn.addEventListener('mousedown', () => setVector(vx,vy));
+        btn.addEventListener('touchstart', e => { e.preventDefault(); setVector(vx,vy); });
+        btn.addEventListener('mouseup', () => setVector(0,0));
+        btn.addEventListener('mouseleave', () => setVector(0,0));
+        btn.addEventListener('touchend', () => setVector(0,0));
+        btn.addEventListener('click', () => { setVector(vx,vy); setTimeout(() => setVector(0,0), 180); });
+      });
+      if (cfg.replay) {
+        const timeline = root.querySelector('#replayTimeline');
+        timeline.max = Math.max(0, cfg.replay.states.length - 1);
+        timeline.addEventListener('input', () => {
+          replayPlaying = false;
+          applyReplayFrame(Number(timeline.value));
+        });
+        root.querySelector('#replayToggle').addEventListener('click', () => {
+          if (replayIndex >= cfg.replay.states.length - 1) replayIndex = 0;
+          replayPlaying = !replayPlaying;
+          replayLastTick = 0;
+          applyReplayFrame(replayIndex);
+        });
+        root.querySelector('#replayPrev').addEventListener('click', () => {
+          replayPlaying = false;
+          applyReplayFrame(replayIndex - 1);
+        });
+        root.querySelector('#replayNext').addEventListener('click', () => {
+          replayPlaying = false;
+          applyReplayFrame(replayIndex + 1);
+        });
+        root.querySelectorAll('[data-speed]').forEach(btn => btn.addEventListener('click', () => {
+          replayDelay = Number(btn.dataset.speed);
+          root.querySelectorAll('[data-speed]').forEach(item => item.classList.remove('active'));
+          btn.classList.add('active');
+          replayPlaying = true;
+          replayLastTick = 0;
+          applyReplayFrame(replayIndex);
+        }));
+      }
+      canvas.addEventListener('keydown', e => {
+        if (cfg.replay) return;
+        const k = e.key.toLowerCase();
+        if (k === 'escape') {
+          pauseBtn.click();
+          e.preventDefault();
+          return;
+        }
+        if (!gameStarted || gamePaused) return;
+        if (cfg.mode === 'grid') {
+          if (k === 'arrowup' || k === 'w') moveGrid(0);
+          if (k === 'arrowright' || k === 'd') moveGrid(1);
+          if (k === 'arrowdown' || k === 's') moveGrid(2);
+          if (k === 'arrowleft' || k === 'a') moveGrid(3);
+        } else {
+          if (k === 'arrowup' || k === 'w') input.up = true;
+          if (k === 'arrowright' || k === 'd') input.right = true;
+          if (k === 'arrowdown' || k === 's') input.down = true;
+          if (k === 'arrowleft' || k === 'a') input.left = true;
+        }
+        e.preventDefault();
+      });
+      canvas.addEventListener('keyup', e => {
+        const k = e.key.toLowerCase();
+        if (k === 'arrowup' || k === 'w') input.up = false;
+        if (k === 'arrowright' || k === 'd') input.right = false;
+        if (k === 'arrowdown' || k === 's') input.down = false;
+        if (k === 'arrowleft' || k === 'a') input.left = false;
+        e.preventDefault();
+      });
+      canvas.addEventListener('click', () => canvas.focus());
+      if (cfg.mode === 'grid') initGrid(); else initContinuous();
+      if (cfg.replay) applyReplayFrame(0);
+      loop();
+      </script>
+    </div>
+    """
+    components.html(template.replace("__CONFIG__", config), height=760, scrolling=False)
+
+
+def init_manual(room_kind: str) -> None:
+    key = f"manual_{room_kind}"
+    if key in st.session_state:
+        return
+    env = make_env(room_kind, seed=31, slip=0.18)
+    state = env.reset()
+    st.session_state[key] = {
+        "env": env,
+        "trajectory": [{"state": state.copy() if isinstance(state, np.ndarray) else state, "action": None, "reward": 0.0, "done": False, "obstacles": getattr(env, "obstacles", [])}],
+    }
+
+
+def reset_manual(room_kind: str) -> None:
+    st.session_state.pop(f"manual_{room_kind}", None)
+    init_manual(room_kind)
+
+
+def manual_step(room_kind: str, action: int) -> None:
+    init_manual(room_kind)
+    state = st.session_state[f"manual_{room_kind}"]
+    env = state["env"]
+    if state["trajectory"][-1].get("done"):
+        return
+    next_state, reward, done, info = env.step(action)
+    state["trajectory"].append(
+        {
+            "state": next_state.copy() if isinstance(next_state, np.ndarray) else next_state,
+            "action": action,
+            "reward": reward,
+            "done": done,
+            "info": info,
+            "obstacles": [dict(item) for item in getattr(env, "obstacles", [])],
+        }
+    )
+
+
+def render_play_tab(room_kind: str) -> None:
+    arcade_component(room_kind)
+
+
+def run_training(room_kind: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    seed = int(params["seed"])
+    gamma = params["gamma"]
+    if room_kind == "dp":
+        env = GridEscapeRoom(room1_config(slip_probability=params["slip"], seed=seed))
+        result = value_iteration(env, gamma=gamma, theta=params["theta"], max_iterations=params["max_iterations"])
+    elif room_kind == "sarsa":
+        env = SokobanEscapeRoom(room2_config(slip_probability=params["slip"], seed=seed))
+        result = train_sarsa(env, episodes=params["episodes"], max_steps=params["max_steps"], alpha=params["alpha"], gamma=gamma, epsilon=params["epsilon"], epsilon_min=params["epsilon_min"], epsilon_decay=params["epsilon_decay"], seed=seed)
+    elif room_kind == "q_learning":
+        env = GridEscapeRoom(room3_config(slip_probability=params["slip"], seed=seed))
+        result = train_q_learning(env, episodes=params["episodes"], max_steps=params["max_steps"], alpha=params["alpha"], gamma=gamma, epsilon=params["epsilon"], epsilon_min=params["epsilon_min"], epsilon_decay=params["epsilon_decay"], seed=seed)
+    elif room_kind == "approx":
+        env = ContinuousEscapeRoom(continuous_room_config(seed=seed))
+        result = train_approx_q_learning(env, episodes=params["episodes"], max_steps=params["max_steps"], alpha=params["alpha"], gamma=gamma, epsilon=params["epsilon"], epsilon_min=params["epsilon_min"], epsilon_decay=params["epsilon_decay"], seed=seed)
+    else:
+        env = DynamicObstacleRoom(obstacle_room_config(seed=seed, obstacle_count=params["obstacle_count"], observation_range=params["observation_range"]))
+        result = train_approx_q_learning(env, episodes=params["episodes"], max_steps=params["max_steps"], alpha=params["alpha"], gamma=gamma, epsilon=params["epsilon"], epsilon_min=params["epsilon_min"], epsilon_decay=params["epsilon_decay"], seed=seed)
+    return {"room_kind": room_kind, "env": env, "result": result, "params": params}
+
+
+def optimize_hyperparameters(room_kind: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    if room_kind == "dp":
+        variants = [
+            {"gamma": 0.92, "theta": 1e-3},
+            {"gamma": 0.96, "theta": 1e-4},
+            {"gamma": 0.98, "theta": 1e-4},
+            {"gamma": 0.99, "theta": 1e-5},
+        ]
+    else:
+        variants = [
+            {"alpha": params["alpha"], "gamma": params["gamma"], "epsilon": params["epsilon"], "epsilon_decay": params["epsilon_decay"]},
+            {"alpha": max(0.01, params["alpha"] * 0.7), "gamma": 0.98, "epsilon": 0.30, "epsilon_decay": 0.995},
+            {"alpha": min(0.5, params["alpha"] * 1.3), "gamma": 0.96, "epsilon": 0.50, "epsilon_decay": 0.990},
+            {"alpha": params["alpha"], "gamma": 0.99, "epsilon": 0.35, "epsilon_decay": 0.993},
+        ]
+
+    rows: List[Dict[str, Any]] = []
+    best_score = float("-inf")
+    best_params = dict(params)
+    for index, variant in enumerate(variants, start=1):
+        candidate = dict(params)
+        candidate.update(variant)
+        candidate["seed"] = int(params["seed"]) + index * 101
+        if room_kind != "dp":
+            cap = 300 if room_kind in {"sarsa", "q_learning"} else 180
+            candidate["episodes"] = min(int(params["episodes"]), cap)
+        trial = run_training(room_kind, candidate)
+        attempts = trial["result"].get("attempts", [])
+        sample = attempts if room_kind == "dp" else attempts[-min(30, len(attempts)) :]
+        success_rate = sum(bool(item["success"]) for item in sample) / max(1, len(sample))
+        mean_reward = float(np.mean([float(item["reward"]) for item in sample])) if sample else float("-inf")
+        mean_steps = float(np.mean([int(item["steps"]) for item in sample])) if sample else float("inf")
+        score = success_rate * 10000.0 + mean_reward - mean_steps * 0.05
+        row = {
+            "candidate": index,
+            "alpha": candidate.get("alpha", 0.0),
+            "gamma": candidate["gamma"],
+            "epsilon": candidate.get("epsilon", 0.0),
+            "epsilon_decay": candidate.get("epsilon_decay", 0.0),
+            "theta": candidate.get("theta", 0.0),
+            "trial_episodes": candidate.get("episodes", 0),
+            "success_rate": success_rate,
+            "mean_reward": mean_reward,
+            "mean_steps": mean_steps,
+            "score": score,
+        }
+        rows.append(row)
+        if score > best_score:
+            best_score = score
+            best_params = dict(params)
+            best_params.update(variant)
+
+    table = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
+    output_dir = Path("runs") / "tuning"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{room_kind}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    table.to_csv(output_path, index=False, encoding="utf-8-sig")
+    return {"table": table, "best_params": best_params, "path": str(output_path)}
+
+
+def register_training_run(run: Dict[str, Any]) -> float:
+    run["artifacts"] = save_run_artifacts(run)
+    st.session_state["last_run"] = run
+    st.session_state.setdefault("runs_by_room", {})[run["room_kind"]] = run
+    success_rate = run_success_rate(run)
+    if success_rate >= 0.60:
+        mark_room_completed(run["room_kind"])
+    return success_rate
+
+
+def render_train_guide(room_kind: str) -> None:
+    is_dp = room_kind == "dp"
+    special = (
+        "<b>Stop threshold</b><span>Controls when Value Iteration stops. Smaller values are more accurate but slower.</span>"
+        if is_dp
+        else "<b>Alpha / Epsilon</b><span>Alpha controls learning speed. Epsilon controls exploration versus exploitation.</span>"
+    )
+    extra = (
+        "<b>Slip probability</b><span>Chance that a grid move slides sideways instead of following the intended action.</span>"
+        if room_kind in {"dp", "sarsa", "q_learning"}
+        else "<b>Max steps</b><span>Episode length limit in the continuous room. Longer episodes allow more exploration.</span>"
+    )
+    if room_kind == "obstacles":
+        extra = "<b>Portal hazards</b><span>Number of moving 0.5m hazards and the forward observation range available to the agent.</span>"
+
+    st.markdown(
+        f"""
+        <div class="train-guide">
+          <h3>Training Control Panel</h3>
+          <p>Use this tab to configure the reinforcement-learning run. After training finishes, open <b>Replay</b> to watch what the agent learned and <b>Analytics</b> to inspect the graphs.</p>
+          <div class="param-grid">
+            <div class="param-card"><b>Seed</b><span>Reproducible randomness. Keep it fixed when comparing parameter changes.</span></div>
+            <div class="param-card"><b>Gamma</b><span>Discount factor. Higher values make the agent care more about future reward.</span></div>
+            <div class="param-card">{extra}</div>
+            <div class="param-card"><b>Max steps</b><span>Maximum moves allowed before an episode ends.</span></div>
+            <div class="param-card">{special}</div>
+            <div class="param-card"><b>Start training</b><span>Runs the selected algorithm and records every attempt for the Replay library.</span></div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_train_tab(room_kind: str) -> None:
+    st.subheader("Train Agent")
+    render_train_guide(room_kind)
+    with st.form(f"train_form_{room_kind}"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown('<div class="form-section">General Setup</div>', unsafe_allow_html=True)
+            seed = st.number_input(
+                "Seed",
+                min_value=0,
+                max_value=100000,
+                value=7,
+                step=1,
+                help="Controls randomness. Use the same seed to reproduce the same training behavior.",
+            )
+            gamma_default = 0.985 if room_kind in {"approx", "obstacles"} else 0.96
+            gamma = st.slider(
+                "Gamma - future reward importance",
+                0.80,
+                0.999,
+                gamma_default,
+                0.001,
+                help="Discount factor. Higher gamma means the agent values long-term rewards more strongly.",
+            )
+        with col2:
+            st.markdown('<div class="form-section">Environment</div>', unsafe_allow_html=True)
+            if room_kind in {"dp", "sarsa", "q_learning"}:
+                slip = st.slider(
+                    "Slip probability - movement noise",
+                    0.0,
+                    0.6,
+                    0.25 if room_kind == "dp" else 0.18,
+                    0.01,
+                    help="Chance that movement is redirected on slippery tiles.",
+                )
+            else:
+                slip = 0.0
+            max_steps = st.slider(
+                "Max steps per episode",
+                80 if room_kind in {"dp", "sarsa", "q_learning"} else 200,
+                1600,
+                250 if room_kind in {"dp", "sarsa"} else (1400 if room_kind == "obstacles" else 850),
+                10 if room_kind in {"dp", "sarsa", "q_learning"} else 50,
+                help="Maximum number of actions before an episode is stopped.",
+            )
+        with col3:
+            st.markdown('<div class="form-section">Algorithm</div>', unsafe_allow_html=True)
+            if room_kind == "dp":
+                theta = st.select_slider(
+                    "Stop threshold - DP convergence",
+                    options=[1e-2, 1e-3, 1e-4, 1e-5],
+                    value=1e-4,
+                    help="Value Iteration stops when value changes are smaller than this threshold.",
+                )
+                max_iterations = st.slider(
+                    "Max value-iteration sweeps",
+                    50,
+                    2000,
+                    1000,
+                    50,
+                    help="Maximum number of full passes over all states.",
+                )
+                episodes = alpha = epsilon = epsilon_min = epsilon_decay = 0
+            else:
+                episodes = st.slider(
+                    "Training episodes",
+                    50,
+                    2500,
+                    650 if room_kind in {"sarsa", "q_learning"} else 450,
+                    50,
+                    help="Number of complete attempts used for learning.",
+                )
+                alpha = st.slider(
+                    "Alpha - learning rate",
+                    0.01,
+                    0.5,
+                    0.15 if room_kind in {"sarsa", "q_learning"} else 0.08,
+                    0.01,
+                    help="How strongly new experience updates the current value estimate.",
+                )
+                epsilon = st.slider(
+                    "Initial epsilon - exploration",
+                    0.0,
+                    1.0,
+                    0.4,
+                    0.01,
+                    help="Probability of choosing a random exploratory action at the beginning.",
+                )
+                epsilon_min = st.slider(
+                    "Minimum epsilon",
+                    0.0,
+                    0.3,
+                    0.03,
+                    0.01,
+                    help="Lowest exploration probability after decay.",
+                )
+                epsilon_decay = st.slider(
+                    "Epsilon decay",
+                    0.95,
+                    1.0,
+                    0.993,
+                    0.001,
+                    help="How quickly exploration decreases after each episode.",
+                )
+                theta = 1e-4
+                max_iterations = 1000
+
+        if room_kind == "obstacles":
+            st.markdown('<div class="form-section">Dynamic Portal-Hazard Settings</div>', unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            with c1:
+                obstacle_count = st.slider(
+                    "Moving portal hazard count",
+                    2,
+                    15,
+                    7,
+                    1,
+                    help="Number of moving 0.5-meter obstacles generated in each room.",
+                )
+            with c2:
+                observation_range = st.slider(
+                    "Forward observation range (meters)",
+                    1.0,
+                    6.0,
+                    3.0,
+                    0.5,
+                    help="How far ahead the agent can observe the nearest obstacle, measured center to center.",
+                )
+        else:
+            obstacle_count = 7
+            observation_range = 3.0
+
+        train_button, tune_button = st.columns(2)
+        with train_button:
+            submitted = st.form_submit_button("Start training", type="primary", use_container_width=True)
+        with tune_button:
+            optimize_submitted = st.form_submit_button("Optimize and train", use_container_width=True)
+
+    params = {
+        "seed": int(seed),
+        "gamma": gamma,
+        "slip": slip,
+        "max_steps": max_steps,
+        "theta": theta,
+        "max_iterations": max_iterations,
+        "episodes": episodes,
+        "alpha": alpha,
+        "epsilon": epsilon,
+        "epsilon_min": epsilon_min,
+        "epsilon_decay": epsilon_decay,
+        "obstacle_count": obstacle_count,
+        "observation_range": observation_range,
+    }
+    if optimize_submitted:
+        with st.spinner("Comparing hyperparameter candidates, then training the best configuration..."):
+            tuning = optimize_hyperparameters(room_kind, params)
+            st.session_state.setdefault("tuning_by_room", {})[room_kind] = tuning
+            completed_run = run_training(room_kind, tuning["best_params"])
+            success_rate = register_training_run(completed_run)
+        st.success(
+            f"Optimization complete. Best configuration trained with {success_rate * 100:.1f}% recent success."
+        )
+    elif submitted:
+        with st.spinner("Training the agent and building arcade replays..."):
+            completed_run = run_training(room_kind, params)
+            success_rate = register_training_run(completed_run)
+        attempt_count = len(completed_run["result"].get("attempts", []))
+        st.success(
+            f"Training complete. All {attempt_count} attempts are available in Replay. "
+            f"Recent success rate: {success_rate * 100:.1f}%."
+        )
+
+    tuning = st.session_state.get("tuning_by_room", {}).get(room_kind)
+    if tuning:
+        st.subheader("Hyperparameter Optimization Results")
+        st.dataframe(
+            tuning["table"].drop(columns=["score"]),
+            use_container_width=True,
+            hide_index=True,
+        )
+        best = tuning["best_params"]
+        st.info(
+            "Best configuration: "
+            + ", ".join(
+                f"{name}={value}"
+                for name, value in best.items()
+                if name in {"alpha", "gamma", "epsilon", "epsilon_decay", "theta"}
+            )
+            + f". Comparison saved to {tuning['path']}."
+        )
+
+
+def get_current_run(room_kind: str) -> Dict[str, Any] | None:
+    room_run = st.session_state.get("runs_by_room", {}).get(room_kind)
+    if room_run:
+        return room_run
+    run = st.session_state.get("last_run")
+    if run and run["room_kind"] == room_kind:
+        return run
+    return None
+
+
+def render_replay_tab(room_kind: str) -> None:
+    run = get_current_run(room_kind)
+    if not run:
+        st.info("Train this room first. Every training attempt will appear here as a playable arcade replay.")
+        return
+    result = run["result"]
+    attempts = result.get("attempts", [])
+    if not attempts:
+        st.warning("No training attempts were recorded for this run.")
+        return
+
+    if room_kind == "obstacles":
+        st.subheader("Unseen Random-Room Test")
+        random_seed = st.number_input(
+            "Random test seed",
+            min_value=0,
+            max_value=100000,
+            value=int(run["params"]["seed"]) + 10000,
+            step=1,
+            key="obstacle_generalization_seed",
+        )
+        if st.button("Generate random room and test learned policy", use_container_width=True):
+            test_env = DynamicObstacleRoom(
+                obstacle_room_config(
+                    seed=int(random_seed),
+                    obstacle_count=int(run["params"]["obstacle_count"]),
+                    observation_range=float(run["params"]["observation_range"]),
+                )
+            )
+            trajectory = run_continuous_policy(
+                test_env,
+                result["agent"],
+                max_steps=int(run["params"]["max_steps"]),
+                seed=int(random_seed),
+            )
+            rewards = np.asarray([float(item["reward"]) for item in trajectory], dtype=np.float32)
+            obstacle_frames = [
+                [
+                    [float(obstacle["x"]), float(obstacle["y"]), float(obstacle["axis"]), float(obstacle["direction"])]
+                    for obstacle in item.get("obstacles", [])
+                ]
+                for item in trajectory
+            ]
+            test_attempt = {
+                "episode": int(random_seed),
+                "label": f"Unseen random room {int(random_seed)}",
+                "states": np.asarray([item["state"] for item in trajectory], dtype=np.float32),
+                "actions": np.asarray(
+                    [-1 if item["action"] is None else int(item["action"]) for item in trajectory],
+                    dtype=np.int8,
+                ),
+                "rewards": rewards,
+                "reward": float(np.sum(rewards, dtype=np.float64)),
+                "steps": max(0, len(trajectory) - 1),
+                "success": bool(trajectory and trajectory[-1]["done"]),
+                "epsilon": 0.0,
+                "obstacles": np.asarray(obstacle_frames, dtype=np.float32),
+            }
+            st.session_state["obstacle_generalization_attempt"] = test_attempt
+
+        test_attempt = st.session_state.get("obstacle_generalization_attempt")
+        if test_attempt:
+            outcome = "SUCCESS" if test_attempt["success"] else "FAILED"
+            st.info(
+                f"Unseen room result: {outcome}, {test_attempt['steps']} steps, "
+                f"reward {test_attempt['reward']:.1f}."
+            )
+            arcade_component(room_kind, test_attempt)
+            st.divider()
+
+    successes = sum(bool(attempt["success"]) for attempt in attempts)
+    best_reward = max(float(attempt["reward"]) for attempt in attempts)
+    hud(
+        room_kind,
+        [
+            ("recorded attempts", str(len(attempts))),
+            ("successful", str(successes)),
+            ("failed", str(len(attempts) - successes)),
+            ("success rate", f"{successes / len(attempts) * 100:.1f}%"),
+            ("best score", f"{best_reward:.1f}"),
+        ],
+    )
+    st.markdown(
+        '<div class="small-note"><b>Complete attempt library.</b> Select any episode below, then use the player controls inside the game to pause, step, scrub the timeline, or change speed.</div>',
+        unsafe_allow_html=True,
+    )
+
+    filter_col, sort_col = st.columns([1, 1])
+    with filter_col:
+        outcome = st.radio(
+            "Attempt result",
+            ["All attempts", "Successful only", "Failed only"],
+            horizontal=True,
+            key=f"replay_outcome_{room_kind}",
+        )
+    with sort_col:
+        ordering = st.selectbox(
+            "Order attempts",
+            ["Episode: newest first", "Episode: oldest first", "Score: highest first"],
+            key=f"replay_order_{room_kind}",
+        )
+
+    filtered = [
+        attempt
+        for attempt in attempts
+        if outcome == "All attempts"
+        or (outcome == "Successful only" and bool(attempt["success"]))
+        or (outcome == "Failed only" and not bool(attempt["success"]))
+    ]
+    if ordering == "Episode: newest first":
+        filtered.sort(key=lambda attempt: int(attempt["episode"]), reverse=True)
+    elif ordering == "Episode: oldest first":
+        filtered.sort(key=lambda attempt: int(attempt["episode"]))
+    else:
+        filtered.sort(key=lambda attempt: float(attempt["reward"]), reverse=True)
+
+    if not filtered:
+        st.warning("No attempts match this filter.")
+        return
+
+    def attempt_label(index: int) -> str:
+        attempt = filtered[index]
+        outcome_label = "SUCCESS" if attempt["success"] else "FAILED"
+        epsilon_label = f" | epsilon {float(attempt['epsilon']):.3f}" if "epsilon" in attempt else ""
+        return (
+            f"Episode {int(attempt['episode'])} | {outcome_label} | "
+            f"score {float(attempt['reward']):.1f} | {int(attempt['steps'])} steps{epsilon_label}"
+        )
+
+    selected_index = st.selectbox(
+        "Choose an episode to replay",
+        range(len(filtered)),
+        format_func=attempt_label,
+        key=f"replay_episode_{room_kind}_{outcome}_{ordering}",
+    )
+    selected_attempt = filtered[selected_index]
+    arcade_component(room_kind, selected_attempt)
+
+
+def save_metrics(df: pd.DataFrame, room_kind: str) -> str:
+    os.makedirs("runs", exist_ok=True)
+    filename = f"runs/{room_kind}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    df.to_csv(filename, index=False, encoding="utf-8-sig")
+    return filename
+
+
+def save_run_artifacts(run: Dict[str, Any]) -> Dict[str, str]:
+    room_kind = run["room_kind"]
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    run_dir = Path("runs") / f"{room_kind}_{stamp}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    metrics = metric_dataframe(run["result"]["metrics"])
+    metrics_path = run_dir / "metrics.csv"
+    metrics.to_csv(metrics_path, index=False, encoding="utf-8-sig")
+
+    attempts = run["result"].get("attempts", [])
+    attempt_summary = pd.DataFrame(
+        [
+            {
+                "episode": int(item["episode"]),
+                "reward": float(item["reward"]),
+                "steps": int(item["steps"]),
+                "success": bool(item["success"]),
+                "epsilon": float(item.get("epsilon", 0.0)),
+            }
+            for item in attempts
+        ]
+    )
+    attempts_path = run_dir / "attempts.csv"
+    attempt_summary.to_csv(attempts_path, index=False, encoding="utf-8-sig")
+
+    params_path = run_dir / "parameters.json"
+    params_path.write_text(json.dumps(run["params"], indent=2), encoding="utf-8")
+
+    figure, axes = plt.subplots(2, 2, figsize=(12, 7), constrained_layout=True)
+    x_name = "iteration" if room_kind == "dp" else "episode"
+    x = metrics[x_name]
+    if room_kind == "dp":
+        axes[0, 0].plot(x, metrics["delta"], color="#2563eb")
+        axes[0, 0].set_yscale("log")
+        axes[0, 0].set_title("Convergence delta")
+        axes[0, 1].plot(x, metrics["value_start"], color="#059669")
+        axes[0, 1].set_title("Start-state value")
+        rollout_steps = [int(item["steps"]) for item in attempts]
+        rollout_rewards = [float(item["reward"]) for item in attempts]
+        axes[1, 0].bar(range(1, len(rollout_steps) + 1), rollout_steps, color="#7c3aed")
+        axes[1, 0].set_title("Policy rollout steps")
+        axes[1, 1].bar(range(1, len(rollout_rewards) + 1), rollout_rewards, color="#ea580c")
+        axes[1, 1].set_title("Policy rollout reward")
+    else:
+        axes[0, 0].plot(x, metrics["reward"], alpha=0.28, color="#64748b")
+        axes[0, 0].plot(x, metrics["reward_ma_25"], color="#2563eb")
+        axes[0, 0].set_title("Reward and moving average")
+        axes[0, 1].plot(x, metrics["steps"], color="#7c3aed")
+        axes[0, 1].set_title("Steps per episode")
+        axes[1, 0].plot(x, metrics["success_rate_ma_25"], color="#059669")
+        axes[1, 0].set_ylim(-0.02, 1.02)
+        axes[1, 0].set_title("Success rate (25 episodes)")
+        axes[1, 1].plot(x, metrics["epsilon"], color="#ea580c")
+        axes[1, 1].set_title("Exploration epsilon")
+    for axis in axes.flat:
+        axis.grid(alpha=0.2)
+        axis.set_xlabel(x_name.title())
+    figure.suptitle(f"{ROOM_THEMES[room_kind]['title']} learning report")
+    plot_path = run_dir / "learning_report.png"
+    figure.savefig(plot_path, dpi=150, facecolor="white")
+    plt.close(figure)
+
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "room": room_kind,
+                "success_rate": run_success_rate(run),
+                "attempts": len(attempts),
+                "best_reward": max((float(item["reward"]) for item in attempts), default=0.0),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "directory": str(run_dir),
+        "metrics": str(metrics_path),
+        "attempts": str(attempts_path),
+        "parameters": str(params_path),
+        "plot": str(plot_path),
+        "summary": str(summary_path),
+    }
+
+
+def render_analytics_tab(room_kind: str) -> None:
+    run = get_current_run(room_kind)
+    if not run:
+        st.info("Run training first to see analytics.")
+        return
+    df = metric_dataframe(run["result"]["metrics"])
+    if room_kind == "dp":
+        last = df.iloc[-1]
+        hud(room_kind, [("iterations", str(int(last["iteration"]))), ("delta", f"{float(last['delta']):.5f}"), ("start value", f"{float(last['value_start']):.2f}"), ("algorithm", "value iteration"), ("room", ROOM_THEMES[room_kind]["title"])])
+        st.line_chart(df.set_index("iteration")[["delta", "value_start"]])
+    else:
+        last = df.iloc[-1]
+        success_rate = float(df.tail(min(50, len(df)))["success"].mean()) if "success" in df else 0.0
+        hud(room_kind, [("episodes", str(int(last["episode"]))), ("last score", f"{float(last['reward']):.1f}"), ("steps", str(int(last["steps"]))), ("success", f"{success_rate * 100:.0f}%"), ("epsilon", f"{float(last.get('epsilon', 0.0)):.3f}")])
+        indexed = df.set_index("episode")
+        st.markdown("#### Learning performance")
+        st.line_chart(indexed[["reward", "reward_ma_25"]])
+        performance_columns = [col for col in ["steps", "success_rate_ma_25"] if col in indexed.columns]
+        st.line_chart(indexed[performance_columns])
+        st.markdown("#### Exploration schedule")
+        st.line_chart(indexed[["epsilon"]])
+        if "mean_abs_td_error" in indexed.columns:
+            st.markdown("#### Approximation error")
+            st.line_chart(indexed[["mean_abs_td_error"]])
+
+    artifacts = run.get("artifacts", {})
+    plot_path = artifacts.get("plot")
+    if plot_path and Path(plot_path).exists():
+        st.caption(f"Saved learning report: {plot_path}")
+        st.image(plot_path, use_container_width=True)
+
+    st.download_button(
+        "Download metrics CSV",
+        data=df.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"{room_kind}_metrics.csv",
+        mime="text/csv",
+    )
+    if st.button("Save metrics in runs folder"):
+        st.success(f"Saved: {save_metrics(df, room_kind)}")
+
+
+def render_details_tab(room_kind: str) -> None:
+    t = ROOM_THEMES[room_kind]
+    st.subheader("Room Design")
+    st.write(
+        {
+            "game": t["title"],
+            "classic_inspiration": t["inspiration"],
+            "mission": t["mission"],
+            "algorithm": t["algorithm"],
+            "state": t["state"],
+            "objective": t["objectives"],
+        }
+    )
+    env = make_env(room_kind)
+    if isinstance(env, GridEscapeRoom):
+        st.write(
+            {
+                "start": env.config.start,
+                "final_state": env.config.goal,
+                "walls": sorted(env.config.walls),
+                "slippery": sorted(env.config.slippery),
+                "traps": env.config.traps,
+                "bonuses": env.config.bonuses,
+                "required_items": env.config.keys,
+                "box_start": env.config.box_start,
+                "box_target": env.config.box_target,
+                "portals": env.config.portals,
+                "guard_cycles": env.config.guard_cycles,
+                "step_reward": env.config.step_reward,
+                "goal_reward": env.config.goal_reward,
+            }
+        )
+    else:
+        st.write(
+            {
+                "room_size": "10x10 meters",
+                "start": env.config.start,
+                "final_state": env.config.goal,
+                "actions": CONTINUOUS_ACTIONS,
+                "hazards": env.config.hazards,
+                "dt": env.config.dt,
+                "speed": env.config.speed,
+                "step_reward": env.config.step_reward,
+                "goal_reward": env.config.goal_reward,
+                "obstacle_width": getattr(env.config, "obstacle_width", None),
+                "obstacle_count": getattr(env.config, "obstacle_count", None),
+                "observation_range": getattr(env.config, "observation_range", None),
+            }
+        )
+
+
+def choose_room(room_kind: str) -> None:
+    st.session_state["selected_room"] = room_kind
+
+
+def clear_room_selection() -> None:
+    st.session_state.pop("selected_room", None)
+
+
+def render_room_selection() -> None:
+    st.markdown(
+        """
+        <div class="select-head">
+          <h2>Choose a Game Room</h2>
+          <p>Each room opens as its own game screen. Pick a room to play manually, train an agent, replay learned behavior, and inspect analytics.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    completed = set(st.session_state.get("completed_rooms", []))
+    st.progress(len(completed) / len(ROOM_ORDER), text=f"Campaign progress: {len(completed)} of {len(ROOM_ORDER)} rooms solved")
+
+    rows = [ROOM_ORDER[:3], ROOM_ORDER[3:]]
+    for row in rows:
+        columns = st.columns(len(row))
+        for column, room_kind in zip(columns, row):
+            t = ROOM_THEMES[room_kind]
+            status = "COMPLETED" if room_kind in completed else ("START HERE" if room_kind == "dp" else "AVAILABLE")
+            with column:
+                st.markdown(
+                    f"""
+                    <div class="room-select-card" style="{style_vars(room_kind)}">
+                      <div class="screen preview-{room_kind}" style="background-image:linear-gradient(180deg,rgba(2,6,23,.08),rgba(2,6,23,.62)),url('/app/static/game_art/{html.escape(t['art'])}');background-size:cover;background-position:center;">
+                        {thumbnail_markup(room_kind)}
+                      </div>
+                      <h3>{html.escape(t["title"])}</h3>
+                      <div class="classic">{html.escape(t["inspiration"])}</div>
+                      <div class="classic">{status}</div>
+                      <div class="algo">{html.escape(t["algorithm"])}</div>
+                      <p>{html.escape(t["mission"])}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                if st.button(f"Open {t['title']}", key=f"open_{room_kind}", use_container_width=True):
+                    choose_room(room_kind)
+                    st.rerun()
+
+
+def render_room_nav(room_kind: str) -> None:
+    t = ROOM_THEMES[room_kind]
+    left, right = st.columns([0.78, 0.22], vertical_alignment="center")
+    with left:
+        st.markdown(
+            f"""
+            <div class="room-nav" style="{style_vars(room_kind)}">
+              <div>
+                <div class="current">{html.escape(t["title"])}</div>
+                <div class="hint">This is a dedicated screen for the selected game. Go back to switch rooms.</div>
+              </div>
+              <div class="hint">{html.escape(t["algorithm"])}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with right:
+        if st.button("Back to games", use_container_width=True):
+            clear_room_selection()
+            st.rerun()
+
+
+def render_room_app(room_kind: str) -> None:
+    render_room_nav(room_kind)
+    room_intro(room_kind)
+    tabs = st.tabs(["Play", "Train", "Replay", "Analytics", "Details"])
+    with tabs[0]:
+        render_play_tab(room_kind)
+    with tabs[1]:
+        render_train_tab(room_kind)
+    with tabs[2]:
+        render_replay_tab(room_kind)
+    with tabs[3]:
+        render_analytics_tab(room_kind)
+    with tabs[4]:
+        render_details_tab(room_kind)
+
+    completed = set(st.session_state.get("completed_rooms", []))
+    next_kind = next_room_kind(room_kind)
+    if room_kind in completed and next_kind:
+        st.success(f"Agent solved this room. The next room is now ready: {ROOM_THEMES[next_kind]['title']}.")
+        if st.button(f"Continue to {ROOM_THEMES[next_kind]['title']}", type="primary", use_container_width=True):
+            choose_room(next_kind)
+            st.rerun()
+    elif room_kind not in completed:
+        st.info("Train an agent to at least 60% recent success to complete this room and continue the campaign.")
+    else:
+        st.success("Campaign complete. All escape rooms have been solved.")
+
+
+def main() -> None:
+    css()
+    header()
+    room_kind = st.session_state.get("selected_room")
+    if not room_kind:
+        render_room_selection()
+        return
+    render_room_app(room_kind)
+
+
+if __name__ == "__main__":
+    main()
