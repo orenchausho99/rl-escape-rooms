@@ -2715,6 +2715,12 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           steps: 0,
           anim: 0,
           lastEnemyTick: 0,
+          lastGhostTick: 0,
+          ghostMoveStarted: 0,
+          ghostTick: 0,
+          ghosts: [],
+          ghostVisualFrom: [],
+          ghostVisualTo: [],
           enemyHitCooldown: 0,
           playerMoved: false,
           visualFrom: cfg.start.slice(),
@@ -2736,6 +2742,11 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         grid.portals = new Map((cfg.portals || []).map(p => [keyOf(p.from), p.to]));
         grid.targets = cfg.boxTarget ? [cfg.boxTarget] : (cfg.keys || []);
         grid.boxes = cfg.kind === 'sarsa' && cfg.boxStart ? [cfg.boxStart.slice()] : [];
+        if (cfg.kind === 'dp' && cfg.guardCycles) {
+          grid.ghosts = cfg.guardCycles.map(cycle => cycle[0].slice());
+          grid.ghostVisualFrom = grid.ghosts.map(position => position.slice());
+          grid.ghostVisualTo = grid.ghosts.map(position => position.slice());
+        }
         grid.pellets = new Set();
         grid.pelletsEaten = 0;
         grid.requiredPellets = 0;
@@ -2754,6 +2765,9 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       }
       function guardPositions() {
         if (!cfg.guardCycles) return [];
+        if (cfg.kind === 'dp' && !cfg.replay && grid.ghosts.length) {
+          return grid.ghosts;
+        }
         return cfg.guardCycles.map(cycle => cycle[grid.phase % cycle.length]);
       }
       function insideGrid(row, col) {
@@ -2767,16 +2781,96 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         const targets = new Set(grid.targets.map(keyOf));
         return grid.boxes.every(box => targets.has(keyOf(box)));
       }
+      function resetLiveGhosts() {
+        if (cfg.kind !== 'dp' || !cfg.guardCycles) return;
+        grid.ghosts = cfg.guardCycles.map(cycle => cycle[0].slice());
+        grid.ghostVisualFrom = grid.ghosts.map(position => position.slice());
+        grid.ghostVisualTo = grid.ghosts.map(position => position.slice());
+        grid.ghostMoveStarted = performance.now();
+      }
+      function ghostTarget(index) {
+        if (index === 0) return grid.pos.slice();
+        const deltas = [[-1,0],[0,1],[1,0],[0,-1]];
+        const direction = deltas[grid.dir] || [0,0];
+        const lookAhead = [
+          clamp(grid.pos[0] + direction[0] * 2, 0, cfg.rows - 1),
+          clamp(grid.pos[1] + direction[1] * 2, 0, cfg.cols - 1)
+        ];
+        return grid.walls.has(keyOf(lookAhead)) ? grid.pos.slice() : lookAhead;
+      }
+      function nextGhostStep(start, target, occupied) {
+        const startKey = keyOf(start);
+        const targetKey = keyOf(target);
+        if (startKey === targetKey) return start.slice();
+        const queue = [start.slice()];
+        const previous = new Map([[startKey, null]]);
+        const deltas = [[-1,0],[0,1],[1,0],[0,-1]];
+        let found = false;
+        for (let cursor = 0; cursor < queue.length && !found; cursor++) {
+          const current = queue[cursor];
+          for (const delta of deltas) {
+            const candidate = [current[0] + delta[0], current[1] + delta[1]];
+            const candidateKey = keyOf(candidate);
+            if (!insideGrid(candidate[0], candidate[1]) || grid.walls.has(candidateKey) || previous.has(candidateKey)) continue;
+            if (occupied.has(candidateKey) && candidateKey !== targetKey) continue;
+            previous.set(candidateKey, keyOf(current));
+            queue.push(candidate);
+            if (candidateKey === targetKey) { found = true; break; }
+          }
+        }
+        if (!previous.has(targetKey)) {
+          const legal = deltas
+            .map(delta => [start[0] + delta[0], start[1] + delta[1]])
+            .filter(candidate => insideGrid(candidate[0], candidate[1]) && !grid.walls.has(keyOf(candidate)) && !occupied.has(keyOf(candidate)))
+            .sort((a, b) =>
+              (Math.abs(a[0] - target[0]) + Math.abs(a[1] - target[1])) -
+              (Math.abs(b[0] - target[0]) + Math.abs(b[1] - target[1]))
+            );
+          return legal.length ? legal[0] : start.slice();
+        }
+        let cursorKey = targetKey;
+        while (previous.get(cursorKey) !== startKey && previous.get(cursorKey) !== null) {
+          cursorKey = previous.get(cursorKey);
+        }
+        return cursorKey.split(',').map(Number);
+      }
+      function advanceLiveGhosts(now) {
+        if (cfg.kind !== 'dp' || cfg.replay || !grid.ghosts.length) return;
+        if (!grid.lastGhostTick) grid.lastGhostTick = now;
+        if (now - grid.lastGhostTick < 460) return;
+        grid.lastGhostTick = now;
+        const from = grid.ghosts.map(position => position.slice());
+        const occupied = new Set(grid.ghosts.map(keyOf));
+        const next = [];
+        for (let index = 0; index < grid.ghosts.length; index++) {
+          const current = grid.ghosts[index];
+          occupied.delete(keyOf(current));
+          const candidate = nextGhostStep(current, ghostTarget(index), occupied);
+          occupied.add(keyOf(candidate));
+          next.push(candidate);
+        }
+        grid.ghostVisualFrom = from;
+        grid.ghostVisualTo = next.map(position => position.slice());
+        grid.ghostMoveStarted = now;
+        grid.ghosts = next;
+        grid.ghostTick += 1;
+        grid.phase = grid.ghostTick;
+        grid.score += cfg.stepReward * .25;
+        enemyCollision();
+      }
       function enemyCollision() {
         if (cfg.kind !== 'dp') return false;
         if (grid.anim < grid.enemyHitCooldown) return false;
         const hit = guardPositions().some(enemy => keyOf(enemy) === keyOf(grid.pos));
         if (hit) {
+          const caughtAt = grid.pos.slice();
           const hitCenter = cellCenter(grid.pos);
           emitBurst(hitCenter.x, hitCenter.y, '#fb7185', 28);
           grid.score += cfg.guardReward;
           grid.hits += 1;
           grid.pos = cfg.start.slice();
+          animateGridMove(caughtAt, grid.pos);
+          resetLiveGhosts();
           grid.enemyHitCooldown = grid.anim + 2200;
           grid.message = 'A ghost caught PAC. Back to start.';
           screenEffect('hit');
@@ -2786,10 +2880,14 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       function updateGridWorld(now) {
         if (!grid || grid.won) return;
         grid.anim = now || 0;
+        if (cfg.kind === 'dp' && !cfg.replay) {
+          advanceLiveGhosts(grid.anim);
+          root.dataset.ghostPhase = String(grid.phase);
+          return;
+        }
         if (grid.lastEnemyTick === 0) grid.lastEnemyTick = grid.anim;
         if (grid.anim - grid.lastEnemyTick < 360) return;
         grid.lastEnemyTick = grid.anim;
-        if (cfg.kind === 'dp' && !cfg.replay) enemyCollision();
       }
       function moveSokoban(action) {
         focusGame();
@@ -2921,19 +3019,22 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
             screenEffect('reward');
           }
         }
-        grid.phase += 1;
-        for (const g of guardPositions()) {
-          if (g[0] === grid.pos[0] && g[1] === grid.pos[1]) {
-            grid.score += cfg.guardReward;
-            const guardCenter = cellCenter(grid.pos);
-            emitBurst(guardCenter.x, guardCenter.y, '#f97316', 26);
-            grid.hits += 1;
-            grid.pos = cfg.start.slice();
-            grid.message = 'Security caught you. Back to start.';
-            screenEffect('hit');
+        if (cfg.kind === 'dp' && !cfg.replay) {
+          enemyCollision();
+        } else {
+          grid.phase += 1;
+          for (const g of guardPositions()) {
+            if (g[0] === grid.pos[0] && g[1] === grid.pos[1]) {
+              grid.score += cfg.guardReward;
+              const guardCenter = cellCenter(grid.pos);
+              emitBurst(guardCenter.x, guardCenter.y, '#f97316', 26);
+              grid.hits += 1;
+              grid.pos = cfg.start.slice();
+              grid.message = 'Security caught you. Back to start.';
+              screenEffect('hit');
+            }
           }
         }
-        enemyCollision();
         if (keyOf(grid.pos) === keyOf(cfg.goal)) {
           const requirementMet = cfg.kind === 'dp' || grid.collected.size >= grid.keys.length;
           if (requirementMet) {
@@ -2970,6 +3071,22 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           y: gridLayout.by + row * gridLayout.cell + gridLayout.cell / 2
         };
       }
+      function visualGhostCenter(index, fallback) {
+        if (cfg.replay || !grid.ghostVisualFrom[index] || !grid.ghostVisualTo[index]) {
+          return cellCenter(fallback);
+        }
+        const elapsed = performance.now() - grid.ghostMoveStarted;
+        const raw = clamp(elapsed / 190, 0, 1);
+        const eased = raw * raw * (3 - 2 * raw);
+        const from = grid.ghostVisualFrom[index];
+        const to = grid.ghostVisualTo[index];
+        const row = from[0] + (to[0] - from[0]) * eased;
+        const col = from[1] + (to[1] - from[1]) * eased;
+        return {
+          x: gridLayout.bx + col * gridLayout.cell + gridLayout.cell / 2,
+          y: gridLayout.by + row * gridLayout.cell + gridLayout.cell / 2
+        };
+      }
       function cellRect(pos) {
         return {
           x: gridLayout.bx + pos[1] * gridLayout.cell,
@@ -2999,66 +3116,149 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         ctx.fillText(subtitle, 250, 28);
       }
       function drawPacAgent(px, py) {
-        const mouth = [Math.PI*1.75, Math.PI*0.25, Math.PI*0.75, Math.PI*1.25][grid.dir];
+        const rotations = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
+        const jaw = .16 + Math.abs(Math.sin(grid.anim * .014)) * .34;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(rotations[grid.dir] || 0);
+        ctx.shadowColor = 'rgba(250,204,21,.72)';
+        ctx.shadowBlur = 14;
         ctx.beginPath();
-        ctx.moveTo(px, py);
-        ctx.arc(px, py, 20, mouth + 0.38, mouth + Math.PI*2 - 0.38);
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, 20, jaw, Math.PI * 2 - jaw);
         ctx.closePath();
         ctx.fillStyle = cfg.colors.agent;
         ctx.fill();
-        ctx.fillStyle = '#111827';
-        ctx.beginPath(); ctx.arc(px + 4, py - 8, 3, 0, Math.PI*2); ctx.fill();
-      }
-      function drawGhost(px, py, color='#fb7185') {
-        ctx.fillStyle = color;
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#fde047';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,.65)';
         ctx.beginPath();
-        ctx.moveTo(px - 17, py + 16);
-        ctx.lineTo(px - 17, py - 3);
-        ctx.quadraticCurveTo(px - 17, py - 22, px, py - 22);
-        ctx.quadraticCurveTo(px + 17, py - 22, px + 17, py - 3);
-        ctx.lineTo(px + 17, py + 16);
-        ctx.lineTo(px + 10, py + 10);
-        ctx.lineTo(px + 4, py + 16);
-        ctx.lineTo(px - 4, py + 10);
-        ctx.lineTo(px - 10, py + 16);
+        ctx.arc(-6, -10, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#111827';
+        ctx.beginPath();
+        ctx.arc(-5, -10, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,.24)';
+        ctx.beginPath();
+        ctx.arc(-7, -7, 5, Math.PI * 1.1, Math.PI * 1.7);
+        ctx.fill();
+        ctx.restore();
+      }
+      function drawGhost(px, py, color='#fb7185', lookX=0, lookY=1, index=0) {
+        const length = Math.hypot(lookX, lookY) || 1;
+        const eyeX = clamp(lookX / length * 2.6, -2.6, 2.6);
+        const eyeY = clamp(lookY / length * 2.6, -2.6, 2.6);
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 13;
+        const body = ctx.createLinearGradient(0, -24, 0, 18);
+        body.addColorStop(0, color);
+        body.addColorStop(1, index % 2 ? '#0891b2' : '#e11d48');
+        ctx.fillStyle = body;
+        ctx.beginPath();
+        ctx.moveTo(-18, 17);
+        ctx.lineTo(-18, -3);
+        ctx.arc(0, -3, 18, Math.PI, 0);
+        ctx.lineTo(18, 17);
+        ctx.quadraticCurveTo(13, 10, 8, 17);
+        ctx.quadraticCurveTo(3, 10, -2, 17);
+        ctx.quadraticCurveTo(-7, 10, -12, 17);
+        ctx.quadraticCurveTo(-15, 13, -18, 17);
         ctx.closePath();
         ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(255,255,255,.38)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
         ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(px - 6, py - 8, 4, 0, Math.PI*2); ctx.arc(px + 7, py - 8, 4, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#111827';
-        ctx.beginPath(); ctx.arc(px - 5, py - 7, 2, 0, Math.PI*2); ctx.arc(px + 8, py - 7, 2, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(-7, -7, 6, 7, 0, 0, Math.PI * 2);
+        ctx.ellipse(7, -7, 6, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#172554';
+        ctx.beginPath();
+        ctx.arc(-7 + eyeX, -7 + eyeY, 2.8, 0, Math.PI * 2);
+        ctx.arc(7 + eyeX, -7 + eyeY, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(15,23,42,.75)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 6, 6, .2, Math.PI - .2);
+        ctx.stroke();
+        ctx.restore();
       }
-      function drawBurglar(px, py) {
+      function drawVaultRunner(px, py) {
+        const reach = grid.dir === 1 ? 1 : (grid.dir === 3 ? -1 : 0);
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.fillStyle = 'rgba(2,6,23,.45)';
+        ctx.beginPath(); ctx.ellipse(0, 20, 20, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#312e81';
+        ctx.lineWidth = 7;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-7, 11); ctx.lineTo(-9, 22); ctx.moveTo(7, 11); ctx.lineTo(10, 22); ctx.stroke();
+        rr(-14, -4, 28, 24, 6, '#2563eb', '#bfdbfe');
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(-3, -2, 6, 19);
+        ctx.strokeStyle = '#fde68a';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(-12, 2);
+        ctx.lineTo(reach < 0 ? -25 : -18, reach < 0 ? -2 : 10);
+        ctx.moveTo(12, 2);
+        ctx.lineTo(reach > 0 ? 25 : 18, reach > 0 ? -2 : 10);
+        ctx.stroke();
+        rr(-12, -18, 24, 17, 7, '#fed7aa', '#78350f');
         ctx.fillStyle = '#111827';
-        ctx.beginPath(); ctx.arc(px, py - 8, 13, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#e5e7eb';
-        ctx.fillRect(px - 10, py - 12, 20, 6);
-        ctx.fillStyle = '#111827';
-        ctx.beginPath(); ctx.arc(px - 5, py - 9, 2, 0, Math.PI * 2); ctx.arc(px + 5, py - 9, 2, 0, Math.PI * 2); ctx.fill();
-        rr(px - 12, py + 5, 24, 24, 8, '#7c3aed', '#e9d5ff');
-        ctx.strokeStyle = '#e9d5ff'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(px-12,py+14); ctx.lineTo(px-23,py+22); ctx.moveTo(px+12,py+14); ctx.lineTo(px+23,py+22); ctx.stroke();
-      }
-      function drawRobot(px, py) {
-        rr(px - 16, py - 16, 32, 32, 7, '#14b8a6', '#ccfbf1');
-        ctx.fillStyle = '#022c22';
-        ctx.fillRect(px - 8, py - 5, 5, 5);
-        ctx.fillRect(px + 3, py - 5, 5, 5);
-        ctx.strokeStyle = '#ccfbf1'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(px - 12, py + 9); ctx.lineTo(px + 12, py + 9); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(px, py - 16); ctx.lineTo(px, py - 25); ctx.stroke();
-        ctx.beginPath(); ctx.arc(px, py - 28, 4, 0, Math.PI * 2); ctx.fillStyle = '#facc15'; ctx.fill();
+        ctx.fillRect(-8, -13, 16, 6);
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(-6, -12, 4, 3);
+        ctx.fillRect(2, -12, 4, 3);
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath();
+        ctx.arc(0, -18, 14, Math.PI, 0);
+        ctx.lineTo(13, -14);
+        ctx.lineTo(-13, -14);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#fef3c7';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = '#e0f2fe';
+        ctx.fillRect(-4, -24, 8, 5);
+        ctx.restore();
       }
       function drawBomberman(px, py) {
-        ctx.fillStyle = '#facc15';
-        ctx.beginPath(); ctx.arc(px, py - 7, 17, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 4; ctx.stroke();
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(px - 9, py - 13, 7, 7);
-        ctx.fillRect(px + 3, py - 13, 7, 7);
-        rr(px - 14, py + 8, 28, 22, 7, '#14b8a6', '#ccfbf1');
-        ctx.strokeStyle = '#facc15'; ctx.lineWidth = 5; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(px - 12, py + 15); ctx.lineTo(px - 25, py + 21); ctx.moveTo(px + 12, py + 15); ctx.lineTo(px + 25, py + 21); ctx.stroke();
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.fillStyle = 'rgba(2,6,23,.5)';
+        ctx.beginPath(); ctx.ellipse(0, 21, 21, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#db2777';
+        ctx.lineWidth = 8;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-8, 11); ctx.lineTo(-12, 22); ctx.moveTo(8, 11); ctx.lineTo(13, 22); ctx.stroke();
+        rr(-14, 0, 28, 22, 8, '#2563eb', '#bfdbfe');
+        ctx.strokeStyle = '#f9a8d4';
+        ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.moveTo(-12, 5); ctx.lineTo(-23, 11); ctx.moveTo(12, 5); ctx.lineTo(23, 11); ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(0, -10, 19, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#172554';
+        ctx.beginPath(); ctx.ellipse(0, -8, 12, 13, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-6, -13, 3, 7);
+        ctx.fillRect(4, -13, 3, 7);
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(0, -28); ctx.lineTo(8, -37); ctx.stroke();
+        ctx.fillStyle = '#f472b6';
+        ctx.beginPath(); ctx.arc(10, -39, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#fbcfe8'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.restore();
       }
       function drawIceLab() {
         const cell = gridLayout.cell, bx = gridLayout.bx, by = gridLayout.by;
@@ -3085,15 +3285,22 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           }
         }
         drawGridObjects('ice');
+        const p = visualPlayerCenter();
         const ghostColors = ['#fb7185', '#22d3ee', '#f97316'];
         for (const [index, enemy] of guardPositions().entries()) {
-          const ghost = cellCenter(enemy);
-          const bob = Math.sin(grid.anim * .008 + ghost.x) * 4;
-          drawGhost(ghost.x, ghost.y + bob, ghostColors[index % ghostColors.length]);
+          const ghost = visualGhostCenter(index, enemy);
+          const bob = Math.sin(grid.anim * .008 + index) * 2;
+          drawGhost(
+            ghost.x,
+            ghost.y + bob,
+            ghostColors[index % ghostColors.length],
+            p.x - ghost.x,
+            p.y - ghost.y,
+            index
+          );
         }
-        const p = visualPlayerCenter();
         drawPacAgent(p.x, p.y);
-        writeLabel('GHOST PHASE ' + grid.phase, 720, 28, 12, '#bae6fd');
+        writeLabel('GHOST HUNT ' + grid.phase, 720, 28, 12, '#bae6fd');
       }
       function drawMuseumVault() {
         const cell = gridLayout.cell, bx = gridLayout.bx, by = gridLayout.by;
@@ -3152,17 +3359,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         ctx.strokeStyle = '#052e16'; ctx.lineWidth = 4; ctx.stroke();
         writeLabel('SAFE', safe.x + safe.s / 2, safe.y + safe.s - 12, 10, '#dcfce7');
         const p = visualPlayerCenter();
-        rr(p.x - 14, p.y - 11, 28, 30, 9, '#facc15', '#111827');
-        rr(p.x - 16, p.y - 22, 32, 10, 5, '#a78bfa', '#e9d5ff');
-        ctx.fillStyle = '#111827';
-        ctx.fillRect(p.x - 6, p.y - 2, 4, 4);
-        ctx.fillRect(p.x + 4, p.y - 2, 4, 4);
-        ctx.strokeStyle = '#fde68a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-        ctx.beginPath();
-        if (grid.dir === 1) { ctx.moveTo(p.x+12, p.y+7); ctx.lineTo(p.x+25, p.y+5); }
-        else if (grid.dir === 3) { ctx.moveTo(p.x-12, p.y+7); ctx.lineTo(p.x-25, p.y+5); }
-        else { ctx.moveTo(p.x-10, p.y+9); ctx.lineTo(p.x+10, p.y+9); }
-        ctx.stroke();
+        drawVaultRunner(p.x, p.y);
         const scannerX = bx + 30 + ((grid.anim * .08) % (cell * 9));
         const scannerY = by + cell * 4.45;
         ctx.beginPath(); ctx.arc(scannerX, scannerY, 12, 0, Math.PI*2);
@@ -3253,9 +3450,29 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         for (const g of guardPositions()) {
           const r = cellRect(g), cx = r.x+r.s/2, cy = r.y+r.s/2;
           if (style === 'reactor') {
-            ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI*2); ctx.fillStyle = '#ea580c'; ctx.fill();
-            ctx.strokeStyle = '#fed7aa'; ctx.lineWidth = 3; ctx.stroke();
-            ctx.fillStyle = '#111827'; ctx.fillRect(cx-8, cy-5, 16, 10);
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.shadowColor = '#f97316';
+            ctx.shadowBlur = 12;
+            rr(-19, -13, 38, 26, 9, '#c2410c', '#fed7aa');
+            ctx.shadowBlur = 0;
+            rr(-12, -8, 24, 11, 4, '#172554', '#7dd3fc');
+            ctx.fillStyle = '#67e8f9';
+            ctx.fillRect(-7, -5, 4, 4);
+            ctx.fillRect(3, -5, 4, 4);
+            ctx.strokeStyle = '#fdba74';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-18, 8); ctx.lineTo(-24, 15);
+            ctx.moveTo(18, 8); ctx.lineTo(24, 15);
+            ctx.stroke();
+            ctx.strokeStyle = '#fde68a';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(0, -13); ctx.lineTo(0, -22); ctx.stroke();
+            ctx.beginPath(); ctx.arc(0, -24, 3, 0, Math.PI*2);
+            ctx.fillStyle = '#facc15'; ctx.fill();
+            ctx.restore();
           } else {
             rr(cx-18, cy-16, 36, 32, 10, '#ea580c', '#fed7aa');
             writeLabel(cfg.labels.guard || 'SEC', cx, cy+4, 10);
@@ -3404,31 +3621,114 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         ctx.translate(px, py);
         const tilt = (cont.vx || 0) * 0.16;
         ctx.rotate(tilt);
-        ctx.fillStyle = '#e0f2fe';
+        ctx.fillStyle = 'rgba(2,6,23,.55)';
+        ctx.beginPath(); ctx.ellipse(0, 31, 30, 8, 0, 0, Math.PI * 2); ctx.fill();
+        const flame = 34 + Math.sin(animTick() * .55) * 7;
+        if (cont.vx !== 0 || cont.vy !== 0) {
+          const thrust = ctx.createLinearGradient(0, 20, 0, flame + 15);
+          thrust.addColorStop(0, '#fef08a');
+          thrust.addColorStop(.45, '#fb923c');
+          thrust.addColorStop(1, 'rgba(239,68,68,0)');
+          ctx.fillStyle = thrust;
+          ctx.beginPath();
+          ctx.moveTo(-11, 19);
+          ctx.quadraticCurveTo(0, flame + 18, 11, 19);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 14;
+        const hull = ctx.createLinearGradient(-20, -25, 20, 22);
+        hull.addColorStop(0, '#f8fafc');
+        hull.addColorStop(.52, '#bae6fd');
+        hull.addColorStop(1, '#2563eb');
+        ctx.fillStyle = hull;
         ctx.beginPath();
-        ctx.moveTo(0, -27);
-        ctx.lineTo(21, 20);
-        ctx.lineTo(-21, 20);
+        ctx.moveTo(0, -30);
+        ctx.quadraticCurveTo(20, -14, 23, 18);
+        ctx.lineTo(10, 23);
+        ctx.lineTo(-10, 23);
+        ctx.quadraticCurveTo(-23, 7, -23, 18);
+        ctx.quadraticCurveTo(-20, -14, 0, -30);
         ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 4; ctx.stroke();
-        ctx.fillStyle = '#0f172a';
-        ctx.beginPath(); ctx.arc(0, -4, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#e0f2fe'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(-14, 19); ctx.lineTo(-27, 33); ctx.moveTo(14, 19); ctx.lineTo(27, 33); ctx.stroke();
-        if (cont.vx !== 0 || cont.vy !== 0) {
-          ctx.fillStyle = '#fb923c';
-          ctx.beginPath(); ctx.moveTo(-8, 23); ctx.lineTo(0, 46 + Math.sin(animTick() * .5) * 6); ctx.lineTo(8, 23); ctx.closePath(); ctx.fill();
-        }
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#7dd3fc'; ctx.lineWidth = 3; ctx.stroke();
+        const glass = ctx.createLinearGradient(0, -19, 0, 2);
+        glass.addColorStop(0, '#67e8f9');
+        glass.addColorStop(1, '#172554');
+        ctx.fillStyle = glass;
+        ctx.beginPath(); ctx.ellipse(0, -8, 10, 13, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#e0f2fe'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#f97316';
+        ctx.fillRect(-16, 7, 7, 12);
+        ctx.fillRect(9, 7, 7, 12);
+        ctx.strokeStyle = '#e0f2fe'; ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-15, 19); ctx.lineTo(-27, 31); ctx.lineTo(-32, 31);
+        ctx.moveTo(15, 19); ctx.lineTo(27, 31); ctx.lineTo(32, 31);
+        ctx.stroke();
+        ctx.fillStyle = '#f8fafc';
+        ctx.beginPath(); ctx.arc(-32, 31, 4, 0, Math.PI*2); ctx.arc(32, 31, 4, 0, Math.PI*2); ctx.fill();
         ctx.restore();
       }
-      function drawRunner(px, py) {
-        ctx.strokeStyle = cfg.colors.agent; ctx.lineWidth = 5; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.arc(px, py-22, 10, 0, Math.PI*2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(px,py-10); ctx.lineTo(px,py+20); ctx.stroke();
-        const swing = Math.sin(animTick()*.35) * 12;
-        ctx.beginPath(); ctx.moveTo(px,py+2); ctx.lineTo(px-18,py+8+swing); ctx.moveTo(px,py+2); ctx.lineTo(px+18,py+8-swing); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(px,py+20); ctx.lineTo(px-16,py+42-swing); ctx.moveTo(px,py+20); ctx.lineTo(px+18,py+42+swing); ctx.stroke();
+      function drawPortalScout(px, py) {
+        const moving = Math.abs(cont.vx || 0) + Math.abs(cont.vy || 0) > 0;
+        const stride = moving ? Math.sin(animTick() * .34) * 8 : 0;
+        const facing = (cont.vx || 1) < 0 ? -1 : 1;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.scale(facing, 1);
+        ctx.fillStyle = 'rgba(2,6,23,.58)';
+        ctx.beginPath(); ctx.ellipse(0, 29, 27, 8, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 9;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-7, 13); ctx.lineTo(-9-stride, 28);
+        ctx.moveTo(7, 13); ctx.lineTo(9+stride, 28);
+        ctx.stroke();
+        ctx.strokeStyle = '#fb923c';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(-9-stride, 28); ctx.lineTo(-18-stride, 29);
+        ctx.moveTo(9+stride, 28); ctx.lineTo(18+stride, 29);
+        ctx.stroke();
+        rr(-15, -7, 30, 27, 7, '#e2e8f0', '#ffffff');
+        ctx.fillStyle = '#f97316';
+        ctx.fillRect(4, -5, 6, 22);
+        rr(-21, -4, 8, 22, 3, '#334155', '#94a3b8');
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(-13, -1); ctx.lineTo(-23, 7 + stride * .35);
+        ctx.moveTo(13, -1); ctx.lineTo(24, 4 - stride * .35);
+        ctx.stroke();
+        ctx.fillStyle = '#fb923c';
+        ctx.beginPath(); ctx.arc(-24, 8 + stride * .35, 5, 0, Math.PI*2); ctx.arc(25, 4 - stride * .35, 5, 0, Math.PI*2); ctx.fill();
+        ctx.shadowColor = '#22d3ee';
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = '#f8fafc';
+        ctx.beginPath(); ctx.arc(0, -19, 17, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2; ctx.stroke();
+        const visor = ctx.createLinearGradient(0, -28, 0, -12);
+        visor.addColorStop(0, '#67e8f9');
+        visor.addColorStop(1, '#172554');
+        ctx.fillStyle = visor;
+        ctx.beginPath();
+        ctx.ellipse(4, -19, 12, 9, 0, -.85, .85);
+        ctx.lineTo(-7, -12);
+        ctx.quadraticCurveTo(-10, -20, -6, -26);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#a5f3fc'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-5, -35); ctx.lineTo(-1, -43); ctx.stroke();
+        ctx.fillStyle = '#22d3ee';
+        ctx.beginPath(); ctx.arc(0, -45, 4, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
       }
       function drawDroneLanding() {
         drawArtBase(.18);
@@ -3524,7 +3824,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         ctx.beginPath(); ctx.moveTo(px, py);
         ctx.arc(px, py, cfg.observationRange/cfg.roomSize*bw, heading - .55, heading + .55);
         ctx.closePath(); ctx.fillStyle = 'rgba(56,189,248,.08)'; ctx.fill();
-        drawRunner(px, py);
+        drawPortalScout(px, py);
         const dist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
         const hx = cont.vx || (cfg.goal[0] - cont.x), hy = cont.vy || (cfg.goal[1] - cont.y);
         const visible = cont.obstacles.some(o => {
@@ -3583,22 +3883,14 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         ctx.fill();
         ctx.save();
         ctx.translate(px, py);
-        ctx.rotate(animTick() * 0.06);
-        ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-          const a = i * Math.PI / 3;
-          const rad = i % 2 ? 14 : 24;
-          const x = Math.cos(a) * rad;
-          const y = Math.sin(a) * rad;
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.closePath();
-        ctx.fillStyle = cfg.colors.agent;
-        ctx.fill();
-        ctx.strokeStyle = '#111827';
+        ctx.rotate(animTick() * .045);
+        ctx.strokeStyle = 'rgba(192,132,252,.72)';
         ctx.lineWidth = 3;
-        ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 0, 35, 0, Math.PI * 1.45); ctx.stroke();
+        ctx.fillStyle = '#22d3ee';
+        ctx.beginPath(); ctx.arc(35, 0, 4, 0, Math.PI*2); ctx.fill();
         ctx.restore();
+        drawPortalScout(px, py);
         const dist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
         const visible = cont.teleports.some(t => Math.hypot(t.x-cont.x, t.y-cont.y) <= cfg.observationRange);
         updateStats(cont.score, cont.steps, cont.won ? 'ESCAPED' : (visible ? 'PORTAL NEAR' : 'SEARCHING'), cont.message + ' Distance: ' + dist.toFixed(2) + 'm');

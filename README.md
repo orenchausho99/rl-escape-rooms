@@ -64,6 +64,7 @@ The fifth room also supports generating an unseen random room and testing the le
 - Click `Start Mission`, then use the keyboard directly inside the arena.
 - Grid rooms: press the arrow keys or `W`, `A`, `S`, `D` once per tile.
 - Continuous rooms: hold the arrow keys or `W`, `A`, `S`, `D` to set the discrete velocity.
+- In Pac-Man Play mode, ghosts move every 0.46 seconds and use shortest-path pursuit even while the player is standing still.
 - On mobile, the same actions are available through large touch controls below the arena.
 - The live HUD shows keyboard focus, mission progress, score, steps, goal, and current status.
 
@@ -85,6 +86,8 @@ runtime.txt                    Streamlit Cloud Python version
 Algorithm: Dynamic Programming using Value Iteration.
 
 Model: known. The algorithm reads the complete stochastic transition model, including slippery outcomes and deterministic ghost phases.
+
+The arcade presentation adds a real-time pursuit controller for manual Play mode so the ghosts keep chasing a stationary player. Value Iteration, training rollouts, and Episode Replay continue to use the deterministic `ghost_phase` transition cycle encoded in the known MDP. This keeps the academic model reproducible while making the manual game feel alive.
 
 State:
 
