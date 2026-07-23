@@ -1498,6 +1498,29 @@ def css() -> None:
             background: #171b22 !important;
             color: #ffffff !important;
         }
+        [data-testid="stNumberInput"] [data-baseweb="input"],
+        [data-testid="stNumberInput"] [data-baseweb="base-input"] {
+            background: #171b22 !important;
+            border-color: #3b82f6 !important;
+        }
+        [data-testid="stNumberInput"] input {
+            background: #171b22 !important;
+            color: #f8fafc !important;
+            -webkit-text-fill-color: #f8fafc !important;
+            caret-color: #38bdf8 !important;
+            opacity: 1 !important;
+            font-weight: 800 !important;
+        }
+        [data-testid="stNumberInput"] button {
+            background: #202630 !important;
+            border-color: #46505c !important;
+            color: #f8fafc !important;
+        }
+        [data-testid="stNumberInput"] button:hover {
+            background: #293241 !important;
+            border-color: #38bdf8 !important;
+            color: #ffffff !important;
+        }
         [data-testid="stExpander"] {
             border: 1px solid var(--line);
             border-radius: 7px;
