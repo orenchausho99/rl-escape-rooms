@@ -52,6 +52,13 @@ python -m unittest discover -s tests -v
 
 The fifth room also supports generating an unseen random room and testing the learned policy without additional training.
 
+## Interface
+
+- Mission Control presents all five rooms with their algorithm, state representation, objectives, and campaign status.
+- Every room has direct previous/next navigation and five dedicated workspaces: Play Game, Train Agent, Episode Replay, Analytics, and Room Specs.
+- Room Specs summarizes the environment model, state and action spaces, terminal condition, and reward function.
+- The responsive layout provides keyboard controls on desktop and touch controls on mobile.
+
 ## Manual Game Controls
 
 - Click `Start Mission`, then use the keyboard directly inside the arena.

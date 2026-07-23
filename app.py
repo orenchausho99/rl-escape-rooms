@@ -173,18 +173,24 @@ def css() -> None:
         """
         <style>
         :root {
-            --bg: #07111f;
-            --panel: #0b1220;
-            --panel2: #111827;
-            --text: #e5edf7;
-            --muted: #9ca3af;
-            --line: #263244;
+            --bg: #080a0d;
+            --panel: #101319;
+            --panel2: #171b22;
+            --panel3: #20252e;
+            --text: #f4f7fb;
+            --muted: #a5adb9;
+            --line: #303640;
+            --focus: #67e8f9;
+            --signal: #facc15;
+            --success: #4ade80;
+            --danger-ui: #fb7185;
         }
         .stApp {
             background:
-                radial-gradient(circle at 8% 8%, rgba(59, 130, 246, .16), transparent 28%),
-                radial-gradient(circle at 92% 8%, rgba(45, 212, 191, .12), transparent 26%),
-                linear-gradient(180deg, #050914 0%, #0b1220 45%, #111827 100%);
+                linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px),
+                #080a0d;
+            background-size: 36px 36px;
             color: var(--text);
         }
         header[data-testid="stHeader"],
@@ -199,137 +205,229 @@ def css() -> None:
             display: none;
         }
         .block-container {
-            padding-top: .35rem;
-            padding-bottom: 2rem;
-            max-width: 1380px;
+            padding-top: .5rem;
+            padding-bottom: 3rem;
+            max-width: 1440px;
         }
         [data-testid="stSidebar"] {
-            background: #08111f;
-            border-left: 1px solid #1f2937;
+            background: #0d1015;
+            border-left: 1px solid var(--line);
         }
         h1, h2, h3, p, label, span {
             letter-spacing: 0;
         }
         .topbar {
-            border: 1px solid #1f2a3a;
-            background:
-                linear-gradient(135deg, rgba(56,189,248,.14), transparent 38%),
-                linear-gradient(90deg, rgba(8, 17, 31, .98), rgba(4, 47, 46, .92));
-            border-radius: 16px;
-            padding: 18px 22px;
-            margin-bottom: 16px;
-            box-shadow: 0 18px 48px rgba(0, 0, 0, .24);
+            position: sticky;
+            top: .5rem;
+            z-index: 50;
+            border: 1px solid #343b46;
+            border-left: 4px solid var(--signal);
+            background: rgba(12, 15, 20, .94);
+            backdrop-filter: blur(18px);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 14px;
+            box-shadow: 0 14px 38px rgba(0, 0, 0, .38);
         }
         .topbar-inner {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 16px;
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
             align-items: center;
+        }
+        .brand-lockup {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            min-width: 0;
+        }
+        .brand-mark {
+            display: grid;
+            place-items: center;
+            width: 42px;
+            height: 42px;
+            flex: 0 0 42px;
+            border: 1px solid #59616d;
+            border-radius: 7px;
+            background: var(--signal);
+            color: #090b0f;
+            font-size: .9rem;
+            font-weight: 950;
+            box-shadow: 4px 4px 0 #303640;
         }
         .topbar h1 {
             margin: 0;
-            color: #f8fafc;
-            font-size: 2.05rem;
-            font-weight: 900;
+            color: #ffffff;
+            font-size: 1.15rem;
+            line-height: 1.1;
+            font-weight: 950;
         }
         .topbar p {
-            margin: 7px 0 0 0;
-            color: #cbd5e1;
-            font-size: .98rem;
+            margin: 4px 0 0;
+            color: #9ca3af;
+            font-size: .78rem;
+            font-weight: 750;
+            text-transform: uppercase;
         }
         .topbar-badges {
             display: flex;
             gap: 8px;
-            flex-wrap: wrap;
+            align-items: stretch;
             justify-content: flex-end;
         }
         .topbar-badge {
-            border: 1px solid #334155;
-            background: rgba(255,255,255,.06);
-            border-radius: 999px;
-            padding: 7px 11px;
-            color: #e2e8f0;
-            font-weight: 900;
-            font-size: .82rem;
+            display: grid;
+            gap: 2px;
+            min-width: 106px;
+            border-left: 1px solid #353b45;
+            padding: 3px 12px;
+            color: #a5adb9;
+            font-weight: 850;
+            font-size: .68rem;
             white-space: nowrap;
+            text-transform: uppercase;
         }
-        .topbar-badge.active {
-            border-color: #38bdf8;
-            color: #bae6fd;
-            box-shadow: 0 0 16px rgba(56,189,248,.18);
+        .topbar-badge strong {
+            overflow: hidden;
+            color: #f4f7fb;
+            font-size: .84rem;
+            text-overflow: ellipsis;
+            text-transform: none;
+        }
+        .topbar-badge.active strong {
+            color: var(--focus);
+        }
+        .status-live {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            margin-right: 5px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 9px rgba(74,222,128,.7);
         }
         div[data-testid="stTabs"] {
-            border: 1px solid #263244;
-            background: rgba(8, 17, 31, .72);
-            border-radius: 14px;
-            padding: 8px 10px 12px 10px;
-            margin-top: 8px;
+            border: 1px solid var(--line);
+            background: rgba(13, 16, 21, .86);
+            border-radius: 8px;
+            padding: 8px 10px 12px;
+            margin-top: 10px;
         }
         div[data-testid="stTabs"] [role="tablist"] {
+            display: flex;
+            width: 100%;
             gap: 8px;
-            border-bottom: 1px solid #263244;
+            border-bottom: 1px solid var(--line);
             padding-bottom: 8px;
         }
         div[data-testid="stTabs"] button[role="tab"] {
+            flex: 1 1 0;
+            justify-content: center;
             min-height: 42px;
-            border-radius: 10px;
-            border: 1px solid #334155;
-            background: #111827;
-            color: #e5e7eb !important;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            background: #171b22;
+            color: #c6ccd5 !important;
             font-weight: 900;
-            padding: 0 16px;
+            padding: 0 12px;
             opacity: 1 !important;
         }
         div[data-testid="stTabs"] button[role="tab"] * {
-            color: #e5e7eb !important;
+            color: #c6ccd5 !important;
             font-weight: 900;
             opacity: 1 !important;
         }
+        div[data-testid="stTabs"] button[role="tab"]:hover {
+            border-color: #46505d;
+            background: #20252e;
+        }
         div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-            border-color: #38bdf8;
-            background: linear-gradient(135deg, #1d4ed8, #0f172a);
-            color: #ffffff !important;
-            box-shadow: 0 0 16px rgba(56, 189, 248, .32);
+            border-color: var(--signal);
+            background: var(--signal);
+            color: #090b0f !important;
+            box-shadow: none;
         }
         div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] * {
-            color: #ffffff !important;
+            color: #090b0f !important;
+        }
+        div[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+            background-color: var(--signal) !important;
         }
         .game-card {
             --accent: #38bdf8;
-            border: 1px solid #263244;
-            background: linear-gradient(135deg, rgba(15, 23, 42, .96), rgba(17, 24, 39, .90));
-            border-radius: 14px;
-            padding: 16px 18px;
-            margin-bottom: 14px;
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,.03), 0 18px 44px rgba(0,0,0,.24);
+            position: relative;
+            min-height: 262px;
+            overflow: hidden;
+            border: 1px solid color-mix(in srgb, var(--accent), #303640 64%);
+            border-radius: 8px;
+            padding: 22px 24px;
+            margin-bottom: 12px;
+            background-color: #11151b;
+            background-position: center;
+            background-size: cover;
+            box-shadow: 0 18px 46px rgba(0,0,0,.34);
+        }
+        .game-card::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(5,7,10,.98) 0%, rgba(5,7,10,.92) 47%, rgba(5,7,10,.52) 100%);
+        }
+        .game-card > * {
+            position: relative;
+            z-index: 1;
+        }
+        .mission-kicker {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #c8ced7;
+            font-size: .72rem;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+        .mission-kicker span {
+            padding: 4px 7px;
+            border: 1px solid #49515d;
+            border-radius: 4px;
+            background: rgba(9,11,15,.72);
+            white-space: nowrap;
+        }
+        .mission-kicker .room-index {
+            border-color: var(--accent);
+            color: var(--accent);
         }
         .game-card h2 {
-            color: #f8fafc;
-            margin: 0;
-            font-size: 1.5rem;
+            max-width: 720px;
+            color: #ffffff;
+            margin: 16px 0 0;
+            font-size: 2rem;
+            line-height: 1.05;
+            font-weight: 950;
         }
         .game-card .sub {
             color: var(--accent);
             font-weight: 900;
-            margin-top: 3px;
+            margin-top: 7px;
         }
         .game-card .mission {
-            color: #cbd5e1;
-            margin-top: 9px;
+            max-width: 760px;
+            color: #d7dce4;
+            margin-top: 10px;
             line-height: 1.5;
         }
         .objective-row {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 10px;
-            margin-top: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 16px;
         }
         .objective {
-            border: 1px solid #263244;
-            background: rgba(255,255,255,.04);
-            border-radius: 8px;
-            padding: 9px 11px;
-            color: #e5e7eb;
+            border-left: 3px solid var(--accent);
+            background: rgba(9,11,15,.78);
+            border-radius: 4px;
+            padding: 8px 12px;
+            color: #eef2f7;
             font-weight: 800;
         }
         .hud {
@@ -340,11 +438,12 @@ def css() -> None:
             margin: 10px 0 12px 0;
         }
         .hud-card {
-            border: 1px solid #263244;
-            background: rgba(8, 17, 31, .94);
-            border-radius: 10px;
+            border: 1px solid var(--line);
+            border-top: 3px solid #47505d;
+            background: #14181f;
+            border-radius: 6px;
             padding: 10px 12px;
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
+            box-shadow: 0 10px 24px rgba(0,0,0,.2);
         }
         .hud-label {
             color: #94a3b8;
@@ -360,6 +459,9 @@ def css() -> None:
         }
         .hud-card.highlight .hud-value {
             color: var(--accent);
+        }
+        .hud-card.highlight {
+            border-top-color: var(--accent);
         }
         .arcade-shell {
             --accent: #38bdf8;
@@ -576,12 +678,12 @@ def css() -> None:
         button[data-testid="stBaseButton-primary"],
         button[data-testid="stFormSubmitButton"] {
             min-height: 44px;
-            border-radius: 10px;
-            border: 1px solid #38bdf8 !important;
-            background: linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%) !important;
+            border-radius: 6px;
+            border: 1px solid #4a535f !important;
+            background: #20252d !important;
             color: #f8fafc !important;
             font-weight: 900 !important;
-            box-shadow: 0 10px 24px rgba(0, 0, 0, .22), 0 0 12px rgba(56, 189, 248, .22);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, .22);
         }
         div.stButton > button *,
         div.stDownloadButton > button *,
@@ -599,10 +701,19 @@ def css() -> None:
         button[data-testid="stBaseButton-secondary"]:hover,
         button[data-testid="stBaseButton-primary"]:hover,
         button[data-testid="stFormSubmitButton"]:hover {
-            border-color: #facc15 !important;
-            background: linear-gradient(135deg, #2563eb 0%, #172554 100%) !important;
-            color: #ffffff !important;
-            box-shadow: 0 12px 28px rgba(0, 0, 0, .28), 0 0 18px rgba(250, 204, 21, .28);
+            border-color: var(--signal) !important;
+            background: var(--signal) !important;
+            color: #090b0f !important;
+            box-shadow: 0 10px 24px rgba(0,0,0,.32);
+            transform: translateY(-1px);
+        }
+        div.stButton > button:hover *,
+        div.stDownloadButton > button:hover *,
+        div.stFormSubmitButton > button:hover *,
+        button[data-testid="stBaseButton-secondary"]:hover *,
+        button[data-testid="stBaseButton-primary"]:hover *,
+        button[data-testid="stFormSubmitButton"]:hover * {
+            color: #090b0f !important;
         }
         div.stButton > button:focus,
         div.stDownloadButton > button:focus,
@@ -610,47 +721,103 @@ def css() -> None:
         button[data-testid="stBaseButton-secondary"]:focus,
         button[data-testid="stBaseButton-primary"]:focus,
         button[data-testid="stFormSubmitButton"]:focus {
-            outline: 3px solid rgba(250, 204, 21, .45) !important;
+            outline: 3px solid rgba(103, 232, 249, .45) !important;
             outline-offset: 2px;
         }
+        div.stButton > button:disabled,
+        button[data-testid="stBaseButton-secondary"]:disabled {
+            border-color: #313741 !important;
+            background: #12161b !important;
+            color: #69727e !important;
+            box-shadow: none !important;
+            transform: none !important;
+            cursor: not-allowed;
+        }
+        div.stButton > button:disabled *,
+        button[data-testid="stBaseButton-secondary"]:disabled * {
+            color: #69727e !important;
+        }
         .select-head {
-            border: 1px solid #263244;
-            background: rgba(8, 17, 31, .92);
-            border-radius: 14px;
-            padding: 18px 20px;
-            margin-bottom: 16px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 20px;
+            align-items: end;
+            border-top: 1px solid #353c46;
+            border-bottom: 1px solid #353c46;
+            padding: 22px 2px 20px;
+            margin-bottom: 14px;
         }
         .select-head h2 {
             margin: 0;
-            color: #f8fafc;
-            font-size: 1.55rem;
+            color: #ffffff;
+            font-size: 2rem;
+            line-height: 1.08;
+            font-weight: 950;
         }
         .select-head p {
             margin: 7px 0 0 0;
-            color: #cbd5e1;
+            color: #aeb6c1;
+            max-width: 760px;
+        }
+        .select-eyebrow {
+            margin-bottom: 7px;
+            color: var(--signal);
+            font-size: .72rem;
+            font-weight: 950;
+            text-transform: uppercase;
+        }
+        .campaign-score {
+            min-width: 148px;
+            text-align: right;
+        }
+        .campaign-score strong {
+            display: block;
+            color: #ffffff;
+            font-size: 2.5rem;
+            line-height: 1;
+        }
+        .campaign-score span {
+            color: #9ca3af;
+            font-size: .72rem;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+        .campaign-track {
+            position: relative;
+            height: 8px;
+            overflow: hidden;
+            border: 1px solid #3a414c;
+            border-radius: 4px;
+            background: #171b22;
+            margin: 0 0 18px;
+        }
+        .campaign-track span {
+            display: block;
+            width: var(--progress);
+            height: 100%;
+            background: linear-gradient(90deg, var(--focus), var(--success));
         }
         .room-select-card {
             --accent: #38bdf8;
-            min-height: 230px;
-            border: 1px solid color-mix(in srgb, var(--accent), #263244 55%);
-            background:
-                linear-gradient(135deg, color-mix(in srgb, var(--accent), transparent 88%), rgba(15,23,42,.96)),
-                #0b1220;
-            border-radius: 16px;
-            padding: 16px;
-            margin-bottom: 10px;
-            box-shadow: 0 16px 40px rgba(0,0,0,.22), inset 0 0 0 1px rgba(255,255,255,.03);
+            min-height: 430px;
+            border: 1px solid #303741;
+            border-top: 3px solid var(--accent);
+            background: #12161c;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            box-shadow: 0 16px 40px rgba(0,0,0,.28);
             transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
         }
         .room-select-card:hover {
-            transform: translateY(-3px);
+            transform: translateY(-2px);
             border-color: var(--accent);
-            box-shadow: 0 22px 50px rgba(0,0,0,.34), 0 0 22px color-mix(in srgb, var(--accent), transparent 76%);
+            box-shadow: 0 22px 50px rgba(0,0,0,.38);
         }
         .room-select-card .screen {
-            height: 124px;
-            border-radius: 12px;
-            border: 2px solid var(--accent);
+            height: 160px;
+            border-radius: 6px;
+            border: 1px solid color-mix(in srgb, var(--accent), white 15%);
             background:
                 linear-gradient(rgba(148,163,184,.10) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(148,163,184,.10) 1px, transparent 1px),
@@ -658,7 +825,7 @@ def css() -> None:
             background-size: 12.5% 25%;
             position: relative;
             overflow: hidden;
-            margin-bottom: 13px;
+            margin-bottom: 14px;
             box-shadow: inset 0 0 34px rgba(0,0,0,.5);
         }
         .room-select-card .screen::before,
@@ -1002,45 +1169,103 @@ def css() -> None:
         }
         .preview-obstacles .portal-a { left: 16%; top: 32%; }
         .preview-obstacles .portal-b { right: 14%; top: 30%; }
+        .room-card-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 9px;
+            color: #aab2bd;
+            font-size: .7rem;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+        .room-number {
+            color: var(--accent);
+        }
+        .room-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .room-status::before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #6b7280;
+        }
+        .room-status.ready::before {
+            background: var(--success);
+            box-shadow: 0 0 8px rgba(74,222,128,.6);
+        }
+        .room-status.completed::before {
+            background: var(--signal);
+            box-shadow: 0 0 8px rgba(250,204,21,.6);
         }
         .room-select-card h3 {
-            color: #f8fafc;
-            font-size: 1.1rem;
+            color: #ffffff;
+            font-size: 1.24rem;
+            line-height: 1.15;
             margin: 0;
+            font-weight: 950;
         }
         .room-select-card .classic {
-            display: inline-block;
-            margin-top: 7px;
-            padding: 4px 8px;
-            border: 1px solid color-mix(in srgb, var(--accent), #263244 45%);
-            border-radius: 999px;
-            background: rgba(255,255,255,.05);
-            color: #e2e8f0;
-            font-size: .75rem;
-            font-weight: 900;
+            color: #9fa7b2;
+            font-size: .74rem;
+            font-weight: 800;
+            margin-top: 5px;
         }
         .room-select-card .algo {
             color: var(--accent);
-            font-size: .88rem;
+            font-size: .78rem;
             font-weight: 900;
-            margin-top: 7px;
+            margin-top: 12px;
+            text-transform: uppercase;
+        }
+        .room-state {
+            color: #c8ced7;
+            font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+            font-size: .72rem;
+            margin-top: 5px;
         }
         .room-select-card p {
-            color: #cbd5e1;
-            font-size: .9rem;
-            line-height: 1.45;
+            color: #bbc2cc;
+            font-size: .84rem;
+            line-height: 1.5;
             margin: 9px 0 0 0;
+        }
+        .room-objectives {
+            display: grid;
+            gap: 5px;
+            margin-top: 12px;
+        }
+        .room-objectives span {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            color: #d7dce4;
+            font-size: .76rem;
+            font-weight: 800;
+        }
+        .room-objectives span::before {
+            content: "";
+            width: 6px;
+            height: 6px;
+            flex: 0 0 6px;
+            border: 1px solid var(--accent);
+            background: color-mix(in srgb, var(--accent), transparent 70%);
         }
         .room-nav {
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 12px;
-            border: 1px solid #263244;
-            background: rgba(8, 17, 31, .9);
-            border-radius: 12px;
-            padding: 12px 14px;
-            margin-bottom: 14px;
+            min-height: 44px;
+            border-top: 1px solid #353c46;
+            border-bottom: 1px solid #353c46;
+            padding: 8px 4px;
+            margin-bottom: 10px;
         }
         .room-nav .current {
             color: #f8fafc;
@@ -1048,7 +1273,13 @@ def css() -> None:
         }
         .room-nav .hint {
             color: #94a3b8;
-            font-size: .9rem;
+            font-size: .78rem;
+        }
+        .room-nav .crumb {
+            color: var(--accent);
+            font-size: .7rem;
+            font-weight: 900;
+            text-transform: uppercase;
         }
         div[data-testid="stTabs"] button {
             font-weight: 900;
@@ -1072,20 +1303,18 @@ def css() -> None:
             opacity: 1 !important;
         }
         [data-testid="stForm"] {
-            border: 1px solid #263244;
-            background: rgba(8, 17, 31, .72);
-            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: #101319;
+            border-radius: 8px;
             padding: 18px;
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
+            box-shadow: 0 16px 34px rgba(0,0,0,.24);
         }
         .train-guide {
-            border: 1px solid #263244;
-            background:
-                linear-gradient(135deg, rgba(56,189,248,.10), transparent 46%),
-                rgba(8, 17, 31, .88);
-            border-radius: 14px;
-            padding: 16px;
-            margin: 10px 0 16px 0;
+            border-left: 4px solid var(--focus);
+            background: #14181f;
+            border-radius: 6px;
+            padding: 14px 16px;
+            margin: 8px 0 14px;
         }
         .train-guide h3 {
             margin: 0 0 8px 0;
@@ -1104,12 +1333,12 @@ def css() -> None:
             margin-top: 12px;
         }
         .param-card {
-            border: 1px solid #334155;
-            background: rgba(255,255,255,.045);
-            border-radius: 10px;
+            border-top: 1px solid #3d4551;
+            background: #191e26;
+            border-radius: 5px;
             padding: 10px 11px;
             color: #dbeafe;
-            min-height: 84px;
+            min-height: 76px;
         }
         .param-card b {
             display: block;
@@ -1125,18 +1354,165 @@ def css() -> None:
         .form-section {
             margin: 0 0 10px 0;
             padding: 8px 10px;
-            border-radius: 10px;
-            border: 1px solid #334155;
-            background: rgba(255,255,255,.045);
-            color: #e0f2fe;
+            border-radius: 5px;
+            border-left: 3px solid var(--signal);
+            background: #1a1f27;
+            color: #ffffff;
             font-weight: 900;
+        }
+        .section-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 18px;
+            align-items: end;
+            padding: 12px 2px 14px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #343b45;
+        }
+        .section-kicker {
+            color: var(--focus);
+            font-size: .7rem;
+            font-weight: 950;
+            text-transform: uppercase;
+        }
+        .section-head h2 {
+            margin: 4px 0 0;
+            color: #ffffff;
+            font-size: 1.45rem;
+            font-weight: 950;
+        }
+        .section-head p {
+            max-width: 650px;
+            margin: 0;
+            color: #aeb6c1;
+            font-size: .86rem;
+            line-height: 1.45;
+            text-align: right;
+        }
+        .empty-state {
+            display: grid;
+            grid-template-columns: 44px minmax(0, 1fr);
+            gap: 12px;
+            align-items: center;
+            border: 1px dashed #46505c;
+            border-radius: 7px;
+            padding: 18px;
+            background: #12161c;
+            color: #dce1e8;
+        }
+        .empty-state strong {
+            display: block;
+            color: #ffffff;
+            margin-bottom: 3px;
+        }
+        .empty-state span {
+            color: #aeb6c1;
+            font-size: .86rem;
+        }
+        .empty-icon {
+            display: grid;
+            place-items: center;
+            width: 44px;
+            height: 44px;
+            border: 1px solid #49525f;
+            border-radius: 6px;
+            color: var(--signal);
+            font-size: 1.2rem;
+            font-weight: 950;
+        }
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 9px;
+            margin: 10px 0 14px;
+        }
+        .detail-card {
+            border-top: 3px solid var(--accent);
+            background: #151920;
+            border-radius: 6px;
+            padding: 12px;
+            min-height: 98px;
+        }
+        .detail-card span {
+            display: block;
+            color: #969fab;
+            font-size: .68rem;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+        .detail-card strong {
+            display: block;
+            margin-top: 7px;
+            color: #ffffff;
+            font-size: .94rem;
+            overflow-wrap: anywhere;
+        }
+        .spec-band {
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #101319;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+        .spec-band h3 {
+            margin: 0 0 10px;
+            color: #ffffff;
+            font-size: 1rem;
+        }
+        .reward-row {
+            display: grid;
+            grid-template-columns: minmax(140px, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            padding: 8px 2px;
+            border-top: 1px solid #2e343d;
+            color: #cdd3dc;
+            font-size: .84rem;
+        }
+        .reward-row strong {
+            color: var(--signal);
+            font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+        }
+        [data-testid="stAlert"] {
+            border-radius: 6px;
+            border: 1px solid #3d4652;
+            background: #151a21;
+            color: #eef2f7;
+        }
+        [data-testid="stDataFrame"],
+        [data-testid="stVegaLiteChart"] {
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            overflow: hidden;
+            background: #101319;
+        }
+        [data-baseweb="input"] > div,
+        [data-baseweb="select"] > div {
+            border-color: #46505c !important;
+            background: #171b22 !important;
+            color: #ffffff !important;
+        }
+        [data-testid="stExpander"] {
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #11151b;
         }
         @media (max-width: 760px) {
             .topbar-inner {
-                grid-template-columns: 1fr;
+                align-items: flex-start;
             }
             .topbar-badges {
-                justify-content: flex-start;
+                display: none;
+            }
+            .topbar {
+                position: static;
+            }
+            .select-head {
+                grid-template-columns: 1fr;
+                align-items: start;
+            }
+            .campaign-score {
+                text-align: left;
             }
             .hud, .objective-row {
                 grid-template-columns: 1fr;
@@ -1149,6 +1525,46 @@ def css() -> None:
             }
             .maze {
                 gap: 3px;
+            }
+            .section-head {
+                display: block;
+            }
+            .section-head p {
+                margin-top: 7px;
+                text-align: left;
+            }
+            .details-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .game-card {
+                min-height: 300px;
+                padding: 18px;
+            }
+            .game-card::before {
+                background: linear-gradient(180deg, rgba(5,7,10,.96) 0%, rgba(5,7,10,.84) 68%, rgba(5,7,10,.68) 100%);
+            }
+            .game-card h2 {
+                font-size: 1.65rem;
+            }
+            div[data-testid="stTabs"] [role="tablist"] {
+                overflow-x: auto;
+            }
+            div[data-testid="stTabs"] button[role="tab"] {
+                min-width: 104px;
+            }
+            .st-key-room_navigation [data-testid="stHorizontalBlock"] {
+                flex-direction: row !important;
+                flex-wrap: wrap !important;
+                gap: 8px !important;
+            }
+            .st-key-room_navigation [data-testid="stColumn"] {
+                width: auto !important;
+                min-width: 0 !important;
+                flex: 1 1 calc(33.333% - 8px) !important;
+            }
+            .st-key-room_navigation [data-testid="stColumn"]:nth-child(3) {
+                order: -1;
+                flex: 1 0 100% !important;
             }
         }
         </style>
@@ -1215,21 +1631,25 @@ def next_room_kind(room_kind: str) -> str | None:
     return ROOM_ORDER[index + 1] if index + 1 < len(ROOM_ORDER) else None
 
 
-def header() -> None:
+def header(room_kind: str | None) -> None:
+    completed = len(set(st.session_state.get("completed_rooms", [])))
+    current_label = ROOM_THEMES[room_kind]["title"] if room_kind else "Room Select"
+    stage_label = "Mission active" if room_kind else "Campaign map"
     st.markdown(
-        """
+        f"""
         <div class="topbar">
           <div class="topbar-inner">
-            <div>
-              <h1>Reinforcement Learning Escape Rooms</h1>
-              <p>Choose a game, play it manually, train an agent, then inspect replay and learning analytics.</p>
+            <div class="brand-lockup">
+              <span class="brand-mark">RL</span>
+              <div>
+                <h1>RL Escape Lab</h1>
+                <p>Agent Training Arcade</p>
+              </div>
             </div>
             <div class="topbar-badges">
-              <span class="topbar-badge active">1 Game Select</span>
-              <span class="topbar-badge">2 Play</span>
-              <span class="topbar-badge">3 Train</span>
-              <span class="topbar-badge">4 Replay</span>
-              <span class="topbar-badge">5 Analytics</span>
+              <span class="topbar-badge active">Current<strong>{html.escape(current_label)}</strong></span>
+              <span class="topbar-badge">Campaign<strong>{completed} / {len(ROOM_ORDER)} cleared</strong></span>
+              <span class="topbar-badge">Session<strong><i class="status-live"></i>{stage_label}</strong></span>
             </div>
           </div>
         </div>
@@ -1240,10 +1660,18 @@ def header() -> None:
 
 def room_intro(room_kind: str) -> None:
     t = ROOM_THEMES[room_kind]
+    room_number = ROOM_ORDER.index(room_kind) + 1
+    model_label = "Known model" if room_kind == "dp" else "Unknown model"
+    representation = "10x10 grid" if room_kind in {"dp", "sarsa", "q_learning"} else "Continuous 10x10m"
     objectives = "".join(f'<div class="objective">{html.escape(item)}</div>' for item in t["objectives"])
     st.markdown(
         f"""
-        <div class="game-card" style="{style_vars(room_kind)}">
+        <div class="game-card" style="{style_vars(room_kind)};background-image:url('/app/static/game_art/{html.escape(t['art'])}');">
+          <div class="mission-kicker">
+            <span class="room-index">Room {room_number:02d}</span>
+            <span>{model_label}</span>
+            <span>{representation}</span>
+          </div>
           <h2>{html.escape(t["title"])}</h2>
           <div class="sub">{html.escape(t["subtitle"])}</div>
           <div class="mission">{html.escape(t["mission"])}</div>
@@ -1262,6 +1690,34 @@ def hud(room_kind: str, values: List[Tuple[str, str]], highlight: int = 0) -> No
             f'<div class="{klass}"><div class="hud-label">{html.escape(label)}</div><div class="hud-value">{html.escape(value)}</div></div>'
         )
     st.markdown(f'<div class="hud" style="{style_vars(room_kind)}">{"".join(cards)}</div>', unsafe_allow_html=True)
+
+
+def section_header(kicker: str, title: str, description: str = "") -> None:
+    description_markup = f"<p>{html.escape(description)}</p>" if description else ""
+    st.markdown(
+        f"""
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">{html.escape(kicker)}</div>
+            <h2>{html.escape(title)}</h2>
+          </div>
+          {description_markup}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def empty_state(symbol: str, title: str, message: str) -> None:
+    st.markdown(
+        f"""
+        <div class="empty-state">
+          <div class="empty-icon">{html.escape(symbol)}</div>
+          <div><strong>{html.escape(title)}</strong><span>{html.escape(message)}</span></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def grid_label(env: GridEscapeRoom, pos: Tuple[int, int], state: GridState, room_kind: str) -> Tuple[str, str]:
@@ -3513,31 +3969,28 @@ def register_training_run(run: Dict[str, Any]) -> float:
 
 def render_train_guide(room_kind: str) -> None:
     is_dp = room_kind == "dp"
-    special = (
-        "<b>Stop threshold</b><span>Controls when Value Iteration stops. Smaller values are more accurate but slower.</span>"
+    strategy = (
+        "<b>Convergence</b><span>Gamma sets the reward horizon; the stop threshold controls Value Iteration precision.</span>"
         if is_dp
-        else "<b>Alpha / Epsilon</b><span>Alpha controls learning speed. Epsilon controls exploration versus exploitation.</span>"
+        else "<b>Learning policy</b><span>Alpha controls update strength; epsilon controls exploration and decays over episodes.</span>"
     )
-    extra = (
-        "<b>Slip probability</b><span>Chance that a grid move slides sideways instead of following the intended action.</span>"
+    environment = (
+        "<b>Grid dynamics</b><span>Slip probability and the episode limit control movement uncertainty and search depth.</span>"
         if room_kind in {"dp", "sarsa", "q_learning"}
-        else "<b>Max steps</b><span>Episode length limit in the continuous room. Longer episodes allow more exploration.</span>"
+        else "<b>Continuous dynamics</b><span>The episode limit controls how long the agent can search the 10x10 meter room.</span>"
     )
     if room_kind == "obstacles":
-        extra = "<b>Portal hazards</b><span>Number of moving 0.5m hazards and the forward observation range available to the agent.</span>"
+        environment = "<b>Portal observation</b><span>Control the moving 0.5m hazards and how far ahead the agent can observe.</span>"
 
     st.markdown(
         f"""
         <div class="train-guide">
-          <h3>Training Control Panel</h3>
-          <p>Use this tab to configure the reinforcement-learning run. After training finishes, open <b>Replay</b> to watch what the agent learned and <b>Analytics</b> to inspect the graphs.</p>
+          <h3>Run setup</h3>
+          <p>Set the environment and learning parameters, then launch a standard run or compare candidate configurations.</p>
           <div class="param-grid">
-            <div class="param-card"><b>Seed</b><span>Reproducible randomness. Keep it fixed when comparing parameter changes.</span></div>
-            <div class="param-card"><b>Gamma</b><span>Discount factor. Higher values make the agent care more about future reward.</span></div>
-            <div class="param-card">{extra}</div>
-            <div class="param-card"><b>Max steps</b><span>Maximum moves allowed before an episode ends.</span></div>
-            <div class="param-card">{special}</div>
-            <div class="param-card"><b>Start training</b><span>Runs the selected algorithm and records every attempt for the Replay library.</span></div>
+            <div class="param-card"><b>Reproducibility</b><span>Keep the seed fixed when comparing parameter changes.</span></div>
+            <div class="param-card">{strategy}</div>
+            <div class="param-card">{environment}</div>
           </div>
         </div>
         """,
@@ -3546,7 +3999,11 @@ def render_train_guide(room_kind: str) -> None:
 
 
 def render_train_tab(room_kind: str) -> None:
-    st.subheader("Train Agent")
+    section_header(
+        "Training Console",
+        "Configure agent",
+        f"{ROOM_THEMES[room_kind]['algorithm']} parameters and environment controls.",
+    )
     render_train_guide(room_kind)
     with st.form(f"train_form_{room_kind}"):
         col1, col2, col3 = st.columns(3)
@@ -3748,9 +4205,18 @@ def get_current_run(room_kind: str) -> Dict[str, Any] | None:
 
 
 def render_replay_tab(room_kind: str) -> None:
+    section_header(
+        "Episode Archive",
+        "Replay training episodes",
+        "Filter the complete run history and inspect any recorded episode in the arcade player.",
+    )
     run = get_current_run(room_kind)
     if not run:
-        st.info("Train this room first. Every training attempt will appear here as a playable arcade replay.")
+        empty_state(
+            "R",
+            "No recorded episodes",
+            "Complete a training run in this room to populate the replay archive.",
+        )
         return
     result = run["result"]
     attempts = result.get("attempts", [])
@@ -3857,7 +4323,7 @@ def render_replay_tab(room_kind: str) -> None:
 
     total_episodes = max(int(attempt["episode"]) for attempt in attempts)
     library = pd.DataFrame(replay_library_rows(filtered, total_episodes))
-    st.subheader(f"All Recorded Episodes ({len(filtered)} shown of {len(attempts)})")
+    st.subheader(f"Episode Library ({len(filtered)} shown of {len(attempts)})")
     st.dataframe(
         library,
         width="stretch",
@@ -3896,7 +4362,7 @@ def render_replay_tab(room_kind: str) -> None:
 
     current_episode = int(st.session_state[selection_key])
     current_index = episode_options.index(current_episode)
-    st.subheader("Episode Player")
+    st.subheader("Replay Player")
     previous_col, select_col, next_col = st.columns([0.22, 0.56, 0.22])
     with previous_col:
         st.button(
@@ -4027,9 +4493,18 @@ def save_run_artifacts(run: Dict[str, Any]) -> Dict[str, str]:
 
 
 def render_analytics_tab(room_kind: str) -> None:
+    section_header(
+        "Learning Report",
+        "Training analytics",
+        "Reward, success, exploration, convergence, and approximation quality for the latest run.",
+    )
     run = get_current_run(room_kind)
     if not run:
-        st.info("Run training first to see analytics.")
+        empty_state(
+            "A",
+            "No analytics available",
+            "Complete a training run to generate metrics and learning charts.",
+        )
         return
     df = metric_dataframe(run["result"]["metrics"])
     if room_kind == "dp":
@@ -4057,65 +4532,134 @@ def render_analytics_tab(room_kind: str) -> None:
         st.caption(f"Saved learning report: {plot_path}")
         st.image(plot_path, use_container_width=True)
 
-    st.download_button(
-        "Download metrics CSV",
-        data=df.to_csv(index=False).encode("utf-8-sig"),
-        file_name=f"{room_kind}_metrics.csv",
-        mime="text/csv",
-    )
-    if st.button("Save metrics in runs folder"):
-        st.success(f"Saved: {save_metrics(df, room_kind)}")
+    download_col, save_col = st.columns(2)
+    with download_col:
+        st.download_button(
+            "Download metrics CSV",
+            data=df.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"{room_kind}_metrics.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with save_col:
+        if st.button("Save metrics in runs folder", use_container_width=True):
+            st.success(f"Saved: {save_metrics(df, room_kind)}")
 
 
 def render_details_tab(room_kind: str) -> None:
     t = ROOM_THEMES[room_kind]
-    st.subheader("Room Design")
-    st.write(
-        {
-            "game": t["title"],
-            "classic_inspiration": t["inspiration"],
-            "mission": t["mission"],
-            "algorithm": t["algorithm"],
-            "state": t["state"],
-            "objective": t["objectives"],
-        }
-    )
     env = make_env(room_kind)
-    if isinstance(env, GridEscapeRoom):
-        st.write(
-            {
-                "start": env.config.start,
-                "final_state": env.config.goal,
-                "walls": sorted(env.config.walls),
-                "slippery": sorted(env.config.slippery),
-                "traps": env.config.traps,
-                "bonuses": env.config.bonuses,
-                "required_items": env.config.keys,
-                "box_start": env.config.box_start,
-                "box_target": env.config.box_target,
-                "portals": env.config.portals,
-                "guard_cycles": env.config.guard_cycles,
-                "step_reward": env.config.step_reward,
-                "goal_reward": env.config.goal_reward,
-            }
-        )
+    is_grid = isinstance(env, GridEscapeRoom)
+    model = "Known transition model" if room_kind == "dp" else "Unknown transition model"
+    representation = "10x10 tabular grid" if is_grid else "Continuous 10x10 meter room"
+    actions = "4 discrete directions" if is_grid else "9 discrete velocity pairs"
+    terminal = f"Single terminal: {t['goal']}"
+
+    section_header(
+        "Environment Specification",
+        "Room design",
+        "State, action, transition, terminal, and reward definitions used by the agent.",
+    )
+    detail_values = [
+        ("Algorithm", t["algorithm"]),
+        ("Model", model),
+        ("State", t["state"]),
+        ("Actions", actions),
+    ]
+    detail_cards = "".join(
+        f'<div class="detail-card"><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>'
+        for label, value in detail_values
+    )
+    st.markdown(
+        f'<div class="details-grid" style="{style_vars(room_kind)}">{detail_cards}</div>',
+        unsafe_allow_html=True,
+    )
+
+    if is_grid:
+        config_data = {
+            "representation": representation,
+            "start": env.config.start,
+            "final_state": env.config.goal,
+            "terminal_condition": terminal,
+            "walls": sorted(env.config.walls),
+            "slippery_cells": sorted(env.config.slippery),
+            "slip_probability": env.config.slip_probability,
+            "traps": {str(position): reward for position, reward in env.config.traps.items()},
+            "bonuses": {str(position): reward for position, reward in env.config.bonuses.items()},
+            "required_items": env.config.keys,
+            "box_start": env.config.box_start,
+            "box_target": env.config.box_target,
+            "portals": {str(source): target for source, target in env.config.portals.items()},
+            "guard_cycles": [[list(position) for position in cycle] for cycle in env.config.guard_cycles],
+        }
+        environment_rows = [
+            ("Representation", representation),
+            ("Start", str(env.config.start)),
+            ("Terminal", str(env.config.goal)),
+            ("Slippery cells", str(len(env.config.slippery))),
+            ("Walls", str(len(env.config.walls))),
+        ]
+        reward_rows = [
+            ("Every action", env.config.step_reward),
+            ("Reach final state", env.config.goal_reward),
+            ("Collect required item", env.config.key_reward),
+            ("Hit moving guard", env.config.guard_reward),
+            ("Use portal", env.config.portal_reward),
+        ]
     else:
-        st.write(
-            {
-                "room_size": "10x10 meters",
-                "start": env.config.start,
-                "final_state": env.config.goal,
-                "actions": CONTINUOUS_ACTIONS,
-                "hazards": env.config.hazards,
-                "dt": env.config.dt,
-                "speed": env.config.speed,
-                "step_reward": env.config.step_reward,
-                "goal_reward": env.config.goal_reward,
-                "obstacle_width": getattr(env.config, "obstacle_width", None),
-                "obstacle_count": getattr(env.config, "obstacle_count", None),
-                "observation_range": getattr(env.config, "observation_range", None),
-            }
+        config_data = {
+            "representation": representation,
+            "room_size": env.config.room_size,
+            "start": env.config.start,
+            "final_state": env.config.goal,
+            "terminal_condition": terminal,
+            "actions": CONTINUOUS_ACTIONS,
+            "dt": env.config.dt,
+            "speed": env.config.speed,
+            "hazards": env.config.hazards,
+            "obstacle_width": getattr(env.config, "obstacle_width", None),
+            "obstacle_count": getattr(env.config, "obstacle_count", None),
+            "observation_range": getattr(env.config, "observation_range", None),
+        }
+        environment_rows = [
+            ("Representation", representation),
+            ("Time step", f"{env.config.dt:.2f} seconds"),
+            ("Velocity values", "Vx,Vy in {-1,0,1}"),
+            ("Start", str(env.config.start)),
+            ("Terminal", str(env.config.goal)),
+        ]
+        reward_rows = [
+            ("Every time step", env.config.step_reward),
+            ("Reach final state", env.config.goal_reward),
+            ("Hit wall", env.config.wall_penalty),
+            ("Enter hazard", env.config.hazard_penalty),
+            ("Progress shaping", env.config.progress_scale),
+        ]
+        if room_kind == "obstacles":
+            reward_rows.append(("Hit moving obstacle", env.config.obstacle_penalty))
+
+    environment_markup = "".join(
+        f'<div class="reward-row"><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>'
+        for label, value in environment_rows
+    )
+    rewards_markup = "".join(
+        f'<div class="reward-row"><span>{html.escape(label)}</span><strong>{float(value):+.3f}</strong></div>'
+        for label, value in reward_rows
+    )
+    environment_col, rewards_col = st.columns(2)
+    with environment_col:
+        st.markdown(
+            f'<div class="spec-band"><h3>Environment</h3>{environment_markup}</div>',
+            unsafe_allow_html=True,
         )
+    with rewards_col:
+        st.markdown(
+            f'<div class="spec-band"><h3>Reward function</h3>{rewards_markup}</div>',
+            unsafe_allow_html=True,
+        )
+
+    with st.expander("Full environment configuration"):
+        st.json(config_data)
 
 
 def choose_room(room_kind: str) -> None:
@@ -4127,72 +4671,101 @@ def clear_room_selection() -> None:
 
 
 def render_room_selection() -> None:
+    completed = set(st.session_state.get("completed_rooms", []))
+    completed_count = len(completed)
+    progress_percent = completed_count / len(ROOM_ORDER) * 100
     st.markdown(
-        """
+        f"""
         <div class="select-head">
-          <h2>Choose a Game Room</h2>
-          <p>Each room opens as its own game screen. Pick a room to play manually, train an agent, replay learned behavior, and inspect analytics.</p>
+          <div>
+            <div class="select-eyebrow">Campaign Control</div>
+            <h2>Select a training room</h2>
+            <p>Choose an environment, enter the arena, and train the matching reinforcement-learning agent.</p>
+          </div>
+          <div class="campaign-score">
+            <strong>{completed_count}/{len(ROOM_ORDER)}</strong>
+            <span>Rooms cleared</span>
+          </div>
         </div>
+        <div class="campaign-track" style="--progress:{progress_percent:.1f}%"><span></span></div>
         """,
         unsafe_allow_html=True,
     )
-
-    completed = set(st.session_state.get("completed_rooms", []))
-    st.progress(len(completed) / len(ROOM_ORDER), text=f"Campaign progress: {len(completed)} of {len(ROOM_ORDER)} rooms solved")
 
     rows = [ROOM_ORDER[:3], ROOM_ORDER[3:]]
     for row in rows:
         columns = st.columns(len(row))
         for column, room_kind in zip(columns, row):
             t = ROOM_THEMES[room_kind]
-            status = "COMPLETED" if room_kind in completed else ("START HERE" if room_kind == "dp" else "AVAILABLE")
+            room_number = ROOM_ORDER.index(room_kind) + 1
+            is_completed = room_kind in completed
+            status = "COMPLETED" if is_completed else ("START HERE" if room_kind == "dp" else "READY")
+            status_class = "completed" if is_completed else "ready"
+            objectives = "".join(f"<span>{html.escape(item)}</span>" for item in t["objectives"])
             with column:
                 st.markdown(
                     f"""
                     <div class="room-select-card" style="{style_vars(room_kind)}">
+                      <div class="room-card-top">
+                        <span class="room-number">Room {room_number:02d}</span>
+                        <span class="room-status {status_class}">{status}</span>
+                      </div>
                       <div class="screen preview-{room_kind}" style="background-image:linear-gradient(180deg,rgba(2,6,23,.08),rgba(2,6,23,.62)),url('/app/static/game_art/{html.escape(t['art'])}');background-size:cover;background-position:center;">
                         {thumbnail_markup(room_kind)}
                       </div>
                       <h3>{html.escape(t["title"])}</h3>
                       <div class="classic">{html.escape(t["inspiration"])}</div>
-                      <div class="classic">{status}</div>
                       <div class="algo">{html.escape(t["algorithm"])}</div>
+                      <div class="room-state">STATE · {html.escape(t["state"])}</div>
                       <p>{html.escape(t["mission"])}</p>
+                      <div class="room-objectives">{objectives}</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
-                if st.button(f"Open {t['title']}", key=f"open_{room_kind}", use_container_width=True):
+                if st.button(f"Enter room {room_number:02d}", key=f"open_{room_kind}", use_container_width=True):
                     choose_room(room_kind)
                     st.rerun()
 
 
 def render_room_nav(room_kind: str) -> None:
     t = ROOM_THEMES[room_kind]
-    left, right = st.columns([0.78, 0.22], vertical_alignment="center")
-    with left:
-        st.markdown(
-            f"""
-            <div class="room-nav" style="{style_vars(room_kind)}">
-              <div>
-                <div class="current">{html.escape(t["title"])}</div>
-                <div class="hint">This is a dedicated screen for the selected game. Go back to switch rooms.</div>
-              </div>
-              <div class="hint">{html.escape(t["algorithm"])}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with right:
-        if st.button("Back to games", use_container_width=True):
-            clear_room_selection()
-            st.rerun()
+    room_index = ROOM_ORDER.index(room_kind)
+    previous_kind = ROOM_ORDER[room_index - 1] if room_index > 0 else None
+    next_kind = ROOM_ORDER[room_index + 1] if room_index + 1 < len(ROOM_ORDER) else None
+    with st.container(key="room_navigation"):
+        all_rooms, previous, context, next_room = st.columns([0.16, 0.13, 0.55, 0.16], vertical_alignment="center")
+        with all_rooms:
+            if st.button("All rooms", use_container_width=True):
+                clear_room_selection()
+                st.rerun()
+        with previous:
+            if st.button("Previous", use_container_width=True, disabled=previous_kind is None):
+                choose_room(previous_kind)
+                st.rerun()
+        with context:
+            st.markdown(
+                f"""
+                <div class="room-nav" style="{style_vars(room_kind)}">
+                  <div>
+                    <div class="crumb">Campaign / Room {room_index + 1:02d}</div>
+                    <div class="current">{html.escape(t["title"])}</div>
+                  </div>
+                  <div class="hint">{html.escape(t["algorithm"])}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with next_room:
+            if st.button("Next room", use_container_width=True, disabled=next_kind is None):
+                choose_room(next_kind)
+                st.rerun()
 
 
 def render_room_app(room_kind: str) -> None:
     render_room_nav(room_kind)
     room_intro(room_kind)
-    tabs = st.tabs(["Play", "Train", "Replay", "Analytics", "Details"])
+    tabs = st.tabs(["Play Game", "Train Agent", "Episode Replay", "Analytics", "Room Specs"])
     with tabs[0]:
         render_play_tab(room_kind)
     with tabs[1]:
@@ -4219,8 +4792,8 @@ def render_room_app(room_kind: str) -> None:
 
 def main() -> None:
     css()
-    header()
     room_kind = st.session_state.get("selected_room")
+    header(room_kind)
     if not room_kind:
         render_room_selection()
         return
