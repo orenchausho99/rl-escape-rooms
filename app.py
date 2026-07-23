@@ -1430,6 +1430,7 @@ def arcade_payload(room_kind: str, replay_attempt: Dict[str, Any] | None = None)
         "subtitle": theme["subtitle"],
         "algorithm": theme["algorithm"],
         "mission": theme["mission"],
+        "objectives": theme["objectives"],
         "artUrl": f"/app/static/game_art/{theme['art']}",
         "agent": theme["agent"],
         "goalLabel": theme["goal"],
@@ -1515,7 +1516,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
     config = json.dumps(arcade_payload(room_kind, replay_attempt), ensure_ascii=False)
     template = r"""
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <div class="real-game">
+    <div class="real-game" tabindex="0">
       <style>
         .real-game {
           --accent: #38bdf8;
@@ -1529,6 +1530,13 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           border-radius: 18px;
           padding: 14px;
           overflow: hidden;
+          position: relative;
+          box-shadow: 0 24px 70px rgba(0, 0, 0, .38), inset 0 0 0 1px rgba(255,255,255,.025);
+          transition: border-color .18s ease, box-shadow .18s ease;
+        }
+        .real-game.keyboard-active {
+          border-color: color-mix(in srgb, var(--accent), white 18%);
+          box-shadow: 0 24px 70px rgba(0, 0, 0, .42), 0 0 32px color-mix(in srgb, var(--accent), transparent 72%);
         }
         .game-grid {
           display: grid;
@@ -1541,6 +1549,18 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           width: 100%;
           max-width: 820px;
           align-self: start;
+          overflow: hidden;
+          border-radius: 12px;
+        }
+        .canvas-wrap::after {
+          content: "";
+          position: absolute;
+          inset: 2px;
+          z-index: 4;
+          pointer-events: none;
+          border-radius: 10px;
+          background: repeating-linear-gradient(180deg, transparent 0 3px, rgba(255,255,255,.018) 3px 4px);
+          mix-blend-mode: screen;
         }
         canvas {
           display: block;
@@ -1551,6 +1571,77 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           background: #020617;
           box-shadow: 0 0 28px color-mix(in srgb, var(--accent), transparent 55%);
           outline: none;
+        }
+        .screen-status {
+          position: absolute;
+          z-index: 7;
+          right: 12px;
+          bottom: 12px;
+          display: flex;
+          gap: 7px;
+          align-items: center;
+          pointer-events: none;
+        }
+        .screen-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-height: 28px;
+          padding: 0 9px;
+          border: 1px solid rgba(148,163,184,.35);
+          border-radius: 6px;
+          background: rgba(2,6,23,.78);
+          color: #cbd5e1;
+          font-size: .68rem;
+          font-weight: 900;
+          backdrop-filter: blur(8px);
+        }
+        .screen-chip .signal {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #64748b;
+          box-shadow: 0 0 0 3px rgba(100,116,139,.13);
+        }
+        .keyboard-active .screen-chip .signal {
+          background: #22c55e;
+          box-shadow: 0 0 12px rgba(34,197,94,.9);
+          animation: signalPulse 1.25s ease-in-out infinite;
+        }
+        .screen-flash {
+          position: absolute;
+          inset: 2px;
+          z-index: 8;
+          border-radius: 10px;
+          pointer-events: none;
+          opacity: 0;
+        }
+        .canvas-wrap.hit canvas { animation: gameShake .26s ease-in-out; }
+        .canvas-wrap.hit .screen-flash {
+          background: rgba(239,68,68,.24);
+          animation: flashFrame .34s ease-out;
+        }
+        .canvas-wrap.reward .screen-flash {
+          background: rgba(45,212,191,.18);
+          animation: flashFrame .34s ease-out;
+        }
+        .canvas-wrap.win .screen-flash {
+          background: rgba(34,197,94,.22);
+          animation: flashFrame .7s ease-out;
+        }
+        @keyframes gameShake {
+          0%, 100% { transform: translate(0, 0); }
+          22% { transform: translate(-6px, 2px); }
+          48% { transform: translate(5px, -2px); }
+          72% { transform: translate(-3px, 1px); }
+        }
+        @keyframes flashFrame {
+          0% { opacity: 0; }
+          20% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        @keyframes signalPulse {
+          50% { transform: scale(.72); opacity: .72; }
         }
         .game-overlay {
           position: absolute;
@@ -1607,6 +1698,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           background: rgba(15, 23, 42, .92);
           padding: 14px;
           min-height: 100%;
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
         }
         .side h2 {
           margin: 0;
@@ -1659,8 +1751,122 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           line-height: 1.35;
           margin-bottom: 12px;
         }
-        .controls {
+        .mission-meter {
+          border: 1px solid #263244;
+          border-radius: 10px;
+          background: rgba(2,6,23,.42);
+          padding: 10px;
+          margin: 10px 0 12px;
+        }
+        .mission-meter-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          color: #94a3b8;
+          font-size: .7rem;
+          font-weight: 900;
+          text-transform: uppercase;
+        }
+        .mission-meter-head strong {
+          color: var(--accent);
+          font-size: .8rem;
+        }
+        .mission-track {
+          height: 7px;
+          overflow: hidden;
+          margin: 8px 0 9px;
+          border-radius: 4px;
+          background: #1e293b;
+        }
+        .mission-track span {
+          display: block;
+          width: 0;
+          height: 100%;
+          border-radius: inherit;
+          background: var(--accent);
+          box-shadow: 0 0 14px color-mix(in srgb, var(--accent), transparent 30%);
+          transition: width .24s ease;
+        }
+        .objective-list {
           display: grid;
+          gap: 5px;
+        }
+        .objective-item {
+          display: grid;
+          grid-template-columns: 15px minmax(0, 1fr);
+          gap: 6px;
+          align-items: center;
+          color: #94a3b8;
+          font-size: .76rem;
+          font-weight: 800;
+        }
+        .objective-item i {
+          width: 8px;
+          height: 8px;
+          border: 1px solid #64748b;
+          border-radius: 50%;
+          background: transparent;
+        }
+        .objective-item.active { color: #e2e8f0; }
+        .objective-item.active i {
+          border-color: var(--accent);
+          box-shadow: 0 0 8px color-mix(in srgb, var(--accent), transparent 35%);
+        }
+        .objective-item.done { color: #bbf7d0; }
+        .objective-item.done i {
+          border-color: #22c55e;
+          background: #22c55e;
+          box-shadow: 0 0 8px rgba(34,197,94,.68);
+        }
+        .keyboard-console {
+          border: 1px solid #334155;
+          border-radius: 10px;
+          background: rgba(2,6,23,.48);
+          padding: 9px;
+          margin-top: 10px;
+        }
+        .keyboard-console-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          color: #94a3b8;
+          font-size: .68rem;
+          font-weight: 900;
+          text-transform: uppercase;
+        }
+        .keyboard-console-head span:last-child { color: var(--accent); }
+        .key-cluster {
+          display: grid;
+          grid-template-columns: repeat(3, 34px);
+          justify-content: center;
+          gap: 5px;
+          margin-top: 8px;
+        }
+        .key-cluster kbd {
+          display: grid;
+          place-items: center;
+          width: 34px;
+          height: 30px;
+          border: 1px solid #475569;
+          border-bottom-width: 3px;
+          border-radius: 6px;
+          background: #111827;
+          color: #f8fafc;
+          font-family: inherit;
+          font-size: .88rem;
+          font-weight: 900;
+          transition: transform .08s ease, border-color .08s ease, background .08s ease;
+        }
+        .key-cluster kbd.blank { visibility: hidden; }
+        .key-cluster kbd.active {
+          transform: translateY(2px);
+          border-color: var(--accent);
+          border-bottom-width: 1px;
+          background: color-mix(in srgb, var(--accent), #0f172a 72%);
+          box-shadow: 0 0 13px color-mix(in srgb, var(--accent), transparent 55%);
+        }
+        .controls {
+          display: none;
           grid-template-columns: repeat(3, 1fr);
           gap: 8px;
           margin-top: 10px;
@@ -1744,12 +1950,46 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         @media (max-width: 900px) {
           .game-grid {
             grid-template-columns: 1fr;
+            gap: 8px;
+          }
+          .side {
+            padding: 10px;
+          }
+          .side h2,
+          .side .sub,
+          .side > #gameMission,
+          .help {
+            display: none;
+          }
+          .stats {
+            margin: 0 0 8px;
+          }
+          .msg {
+            min-height: 44px;
+            padding: 8px 10px;
+            margin-bottom: 8px;
+          }
+          .mission-meter {
+            padding: 8px 10px;
+            margin: 8px 0;
+          }
+          .controls:not(.hidden) {
+            display: grid;
+            margin-top: 8px;
+          }
+          .keyboard-console {
+            display: none;
           }
         }
       </style>
       <div class="game-grid">
         <div class="canvas-wrap">
           <canvas id="gameCanvas" width="820" height="615" tabindex="0"></canvas>
+          <div class="screen-status">
+            <span class="screen-chip"><span class="signal"></span><span id="keyboardState">KEYBOARD STANDBY</span></span>
+            <span class="screen-chip" id="runState">LIVE RUN</span>
+          </div>
+          <div class="screen-flash"></div>
           <div class="game-overlay" id="gameOverlay">
             <div class="overlay-panel">
               <div class="overlay-kicker" id="overlayKicker">ARCADE MISSION</div>
@@ -1770,6 +2010,18 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
             <div class="stat"><b>Status</b><span id="status">Ready</span></div>
           </div>
           <div class="msg" id="message">Click the game and use keyboard controls.</div>
+          <div class="mission-meter">
+            <div class="mission-meter-head"><span>Mission progress</span><strong id="missionPercent">0%</strong></div>
+            <div class="mission-track"><span id="missionFill"></span></div>
+            <div class="objective-list" id="objectiveList"></div>
+          </div>
+          <div class="keyboard-console" id="keyboardConsole">
+            <div class="keyboard-console-head"><span>Keyboard control</span><span>ARROWS / WASD</span></div>
+            <div class="key-cluster">
+              <kbd class="blank"></kbd><kbd data-keycap="up">&#8593;</kbd><kbd class="blank"></kbd>
+              <kbd data-keycap="left">&#8592;</kbd><kbd data-keycap="down">&#8595;</kbd><kbd data-keycap="right">&#8594;</kbd>
+            </div>
+          </div>
           <div id="gridControls" class="controls">
             <div></div><button data-grid="0">UP</button><div></div>
             <button data-grid="3">LEFT</button><button data-grid="2">DOWN</button><button data-grid="1">RIGHT</button>
@@ -1804,8 +2056,37 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       const cfg = __CONFIG__;
       const root = document.currentScript.closest('.real-game');
       root.style.setProperty('--accent', cfg.colors.accent);
+      root.dataset.kind = cfg.kind;
       const canvas = root.querySelector('#gameCanvas');
       const ctx = canvas.getContext('2d');
+      const canvasWrap = root.querySelector('.canvas-wrap');
+      const keyboardStateEl = root.querySelector('#keyboardState');
+      const runStateEl = root.querySelector('#runState');
+      const missionFillEl = root.querySelector('#missionFill');
+      const missionPercentEl = root.querySelector('#missionPercent');
+      const objectiveListEl = root.querySelector('#objectiveList');
+      objectiveListEl.innerHTML = (cfg.objectives || []).map((item, index) =>
+        '<div class="objective-item" data-objective="' + index + '"><i></i><span>' + item + '</span></div>'
+      ).join('');
+      const objectiveItems = Array.from(objectiveListEl.querySelectorAll('.objective-item'));
+      function setKeyboardActive(active) {
+        root.classList.toggle('keyboard-active', active);
+        keyboardStateEl.textContent = active ? 'KEYBOARD ACTIVE' : 'KEYBOARD STANDBY';
+      }
+      function setKeycap(direction, active) {
+        const keycap = root.querySelector('[data-keycap="' + direction + '"]');
+        if (keycap) keycap.classList.toggle('active', active);
+      }
+      function screenEffect(kind) {
+        canvasWrap.classList.remove('hit', 'reward', 'win');
+        void canvasWrap.offsetWidth;
+        canvasWrap.classList.add(kind);
+        window.setTimeout(() => canvasWrap.classList.remove(kind), kind === 'win' ? 720 : 380);
+      }
+      function focusGame() {
+        root.focus();
+        setKeyboardActive(true);
+      }
       const arenaArt = new Image();
       arenaArt.src = cfg.artUrl;
       arenaArt.onload = () => draw();
@@ -1846,8 +2127,11 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       if (cfg.replay) {
         root.querySelector('#gridControls').classList.add('hidden');
         root.querySelector('#vectorControls').classList.add('hidden');
+        root.querySelector('#keyboardConsole').classList.add('hidden');
         root.querySelector('#replayPanel').classList.remove('hidden');
         root.querySelector('#resetBtn').textContent = 'RESTART REPLAY';
+        runStateEl.textContent = 'EPISODE REPLAY';
+        keyboardStateEl.textContent = 'PLAYER CONTROL';
         pauseBtn.classList.add('hidden');
         gameStarted = true;
         hideGameOverlay();
@@ -1920,11 +2204,50 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         ctx.fill();
         if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
       }
+      function missionProgressValue() {
+        if (cfg.mode === 'grid') {
+          if (!grid) return 0;
+          if (grid.won) return 1;
+          const startDistance = Math.max(1, Math.abs(cfg.goal[0] - cfg.start[0]) + Math.abs(cfg.goal[1] - cfg.start[1]));
+          const currentDistance = Math.abs(cfg.goal[0] - grid.pos[0]) + Math.abs(cfg.goal[1] - grid.pos[1]);
+          const routeProgress = clamp(1 - currentDistance / startDistance, 0, 1);
+          if (cfg.kind === 'sarsa') {
+            const box = grid.boxes && grid.boxes[0];
+            const target = grid.targets && grid.targets[0];
+            const boxDistance = box && target ? Math.abs(box[0] - target[0]) + Math.abs(box[1] - target[1]) : 10;
+            const boxProgress = sokobanSolved() ? 1 : clamp(1 - boxDistance / 10, 0, .82);
+            return clamp(.06 + boxProgress * .66 + routeProgress * .22, 0, .94);
+          }
+          if (cfg.kind === 'q_learning') {
+            const itemProgress = grid.keys.length ? grid.collected.size / grid.keys.length : 1;
+            return clamp(.06 + itemProgress * .58 + routeProgress * .28, 0, .94);
+          }
+          return clamp(.06 + routeProgress * .88, 0, .94);
+        }
+        if (!cont) return 0;
+        if (cont.won) return 1;
+        const startDistance = Math.max(.001, Math.hypot(cfg.goal[0] - cfg.start[0], cfg.goal[1] - cfg.start[1]));
+        const currentDistance = Math.hypot(cfg.goal[0] - cont.x, cfg.goal[1] - cont.y);
+        return clamp(.04 + (1 - currentDistance / startDistance) * .9, 0, .94);
+      }
+      function updateMissionHud(status) {
+        const progress = missionProgressValue();
+        const percent = Math.round(progress * 100);
+        missionFillEl.style.width = percent + '%';
+        missionPercentEl.textContent = percent + '%';
+        const completed = progress >= 1 ? objectiveItems.length : Math.floor(progress * objectiveItems.length);
+        objectiveItems.forEach((item, index) => {
+          item.classList.toggle('done', index < completed);
+          item.classList.toggle('active', index === completed && progress < 1);
+        });
+        runStateEl.textContent = cfg.replay ? 'EPISODE REPLAY' : status;
+      }
       function updateStats(score, steps, status, message) {
         scoreEl.textContent = Math.round(score).toString();
         stepsEl.textContent = steps.toString();
         statusEl.textContent = status;
         msgEl.textContent = message;
+        updateMissionHud(status);
       }
 
       let grid = null;
@@ -1938,6 +2261,10 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           lastEnemyTick: 0,
           enemyHitCooldown: 0,
           playerMoved: false,
+          visualFrom: cfg.start.slice(),
+          visualTo: cfg.start.slice(),
+          moveStarted: 0,
+          hits: 0,
           won: false,
           phase: 0,
           collected: new Set(),
@@ -1963,6 +2290,12 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         }
         draw();
       }
+      function animateGridMove(from, to) {
+        if (!grid) return;
+        grid.visualFrom = from.slice();
+        grid.visualTo = to.slice();
+        grid.moveStarted = performance.now();
+      }
       function guardPositions() {
         if (!cfg.guardCycles) return [];
         return cfg.guardCycles.map(cycle => cycle[grid.phase % cycle.length]);
@@ -1986,9 +2319,11 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           const hitCenter = cellCenter(grid.pos);
           emitBurst(hitCenter.x, hitCenter.y, '#fb7185', 28);
           grid.score += cfg.guardReward;
+          grid.hits += 1;
           grid.pos = cfg.start.slice();
           grid.enemyHitCooldown = grid.anim + 2200;
           grid.message = 'A ghost caught PAC. Back to start.';
+          screenEffect('hit');
         }
         return hit;
       }
@@ -2001,8 +2336,9 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         if (cfg.kind === 'dp' && !cfg.replay) enemyCollision();
       }
       function moveSokoban(action) {
-        canvas.focus();
+        focusGame();
         if (!grid || grid.won) return;
+        const oldPos = grid.pos.slice();
         if (grid.slippery.has(keyOf(grid.pos)) && Math.random() < cfg.slipProbability) {
           action = Math.random() < 0.5 ? (action + 1) % 4 : (action + 3) % 4;
           grid.message = 'Oil slick changed your push direction.';
@@ -2041,7 +2377,9 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         grid.visited.add(here);
         if (grid.traps.has(here)) {
           grid.score += cfg.trapRewards[here] || 0;
+          grid.hits += 1;
           grid.message = 'Laser tile hit. Keep the crate route clean.';
+          screenEffect('hit');
         }
         if (grid.bonusesSet.has(here) && !grid.bonuses.has(here)) {
           grid.bonuses.add(here);
@@ -2054,6 +2392,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           const targetCenter = cellCenter(grid.targets[0]);
           emitBurst(targetCenter.x, targetCenter.y, '#86efac', 30);
           grid.message = 'BOX locked on TARGET. SAFE is open.';
+          screenEffect('reward');
         }
         if (keyOf(grid.pos) === keyOf(cfg.goal)) {
           if (sokobanSolved()) {
@@ -2062,16 +2401,19 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
             const safeCenter = cellCenter(cfg.goal);
             emitBurst(safeCenter.x, safeCenter.y, '#86efac', 46);
             grid.message = 'Sokoban vault cleared.';
+            screenEffect('win');
           } else {
             grid.score += cfg.blockedGoalPenalty;
             grid.message = 'SAFE is locked. Push BOX onto TARGET first.';
           }
         }
+        animateGridMove(oldPos, grid.pos);
         draw();
       }
       function moveGrid(action) {
-        canvas.focus();
+        focusGame();
         if (!grid || grid.won) return;
+        const oldPos = grid.pos.slice();
         if (cfg.kind === 'sarsa') {
           moveSokoban(action);
           return;
@@ -2094,13 +2436,16 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         if (grid.portals.has(here)) {
           grid.pos = grid.portals.get(here).slice();
           grid.message = 'Warp portal activated.';
+          screenEffect('reward');
         }
         const afterPortal = keyOf(grid.pos);
         if (grid.traps.has(afterPortal)) {
           grid.score += cfg.trapRewards[afterPortal] || 0;
           const trapCenter = cellCenter(grid.pos);
           emitBurst(trapCenter.x, trapCenter.y, '#fb7185', 22);
+          grid.hits += 1;
           grid.message = cfg.kind === 'sarsa' ? 'Laser hit. Move carefully.' : 'Danger tile hit.';
+          screenEffect('hit');
         }
         if (grid.bonusesSet.has(afterPortal) && !grid.bonuses.has(afterPortal)) {
           grid.bonuses.add(afterPortal);
@@ -2108,6 +2453,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           const bonusCenter = cellCenter(grid.pos);
           emitBurst(bonusCenter.x, bonusCenter.y, '#facc15', 22);
           grid.message = 'Bonus collected.';
+          screenEffect('reward');
         }
         for (let i = 0; i < grid.keys.length; i++) {
           if (keyOf(grid.keys[i]) === afterPortal && !grid.collected.has(i)) {
@@ -2116,6 +2462,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
             const coreCenter = cellCenter(grid.pos);
             emitBurst(coreCenter.x, coreCenter.y, '#2dd4bf', 28);
             grid.message = cfg.kind === 'sarsa' ? 'BOX condition completed. Now open SAFE.' : 'CORE activated.';
+            screenEffect('reward');
           }
         }
         grid.phase += 1;
@@ -2124,8 +2471,10 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
             grid.score += cfg.guardReward;
             const guardCenter = cellCenter(grid.pos);
             emitBurst(guardCenter.x, guardCenter.y, '#f97316', 26);
+            grid.hits += 1;
             grid.pos = cfg.start.slice();
             grid.message = 'Security caught you. Back to start.';
+            screenEffect('hit');
           }
         }
         enemyCollision();
@@ -2137,11 +2486,13 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
             const goalCenter = cellCenter(grid.pos);
             emitBurst(goalCenter.x, goalCenter.y, '#86efac', 46);
             grid.message = 'Room cleared. Great run.';
+            screenEffect('win');
           } else {
             grid.score += cfg.blockedGoalPenalty;
             grid.message = 'The exit is locked. Collect the required item first.';
           }
         }
+        animateGridMove(oldPos, grid.pos);
         draw();
       }
       const gridLayout = { cell: 53, bx: 145, by: 48 };
@@ -2149,6 +2500,18 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         return {
           x: gridLayout.bx + pos[1] * gridLayout.cell + gridLayout.cell / 2,
           y: gridLayout.by + pos[0] * gridLayout.cell + gridLayout.cell / 2
+        };
+      }
+      function visualPlayerCenter() {
+        if (!grid || !grid.visualFrom || !grid.visualTo) return cellCenter(grid.pos);
+        const elapsed = performance.now() - grid.moveStarted;
+        const raw = clamp(elapsed / 115, 0, 1);
+        const eased = 1 - Math.pow(1 - raw, 3);
+        const row = grid.visualFrom[0] + (grid.visualTo[0] - grid.visualFrom[0]) * eased;
+        const col = grid.visualFrom[1] + (grid.visualTo[1] - grid.visualFrom[1]) * eased;
+        return {
+          x: gridLayout.bx + col * gridLayout.cell + gridLayout.cell / 2,
+          y: gridLayout.by + row * gridLayout.cell + gridLayout.cell / 2
         };
       }
       function cellRect(pos) {
@@ -2272,7 +2635,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           const bob = Math.sin(grid.anim * .008 + ghost.x) * 4;
           drawGhost(ghost.x, ghost.y + bob, ghostColors[index % ghostColors.length]);
         }
-        const p = cellCenter(grid.pos);
+        const p = visualPlayerCenter();
         drawPacAgent(p.x, p.y);
         writeLabel('GHOST PHASE ' + grid.phase, 720, 28, 12, '#bae6fd');
       }
@@ -2332,7 +2695,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         ctx.beginPath(); ctx.arc(safe.x + safe.s / 2, safe.y + safe.s / 2, 10, 0, Math.PI * 2);
         ctx.strokeStyle = '#052e16'; ctx.lineWidth = 4; ctx.stroke();
         writeLabel('SAFE', safe.x + safe.s / 2, safe.y + safe.s - 12, 10, '#dcfce7');
-        const p = cellCenter(grid.pos);
+        const p = visualPlayerCenter();
         rr(p.x - 14, p.y - 11, 28, 30, 9, '#facc15', '#111827');
         rr(p.x - 16, p.y - 22, 32, 10, 5, '#a78bfa', '#e9d5ff');
         ctx.fillStyle = '#111827';
@@ -2402,7 +2765,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           }
         }
         drawGridObjects('reactor');
-        const p = cellCenter(grid.pos);
+        const p = visualPlayerCenter();
         drawBomberman(p.x, p.y);
       }
       function drawGridObjects(style) {
@@ -2457,7 +2820,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         cont = {
           x: cfg.start[0], y: cfg.start[1], vx: 0, vy: 0,
           score: 0, steps: 0, won: false, message: 'Choose a discrete velocity and reach ' + cfg.goalLabel + ' quickly.',
-          path: [], obstacles: [], teleports: [], meteors: [], cooldown: 0
+          path: [], obstacles: [], teleports: [], meteors: [], cooldown: 0, effectCooldown: 0, hits: 0
         };
         if (cfg.teleportMode) {
           for (let i = 0; i < cfg.teleportCount; i++) {
@@ -2475,7 +2838,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           cont.message = 'Choose one of nine discrete velocities every 0.02 seconds and reach PAD.';
         }
       }
-      function setVector(vx, vy) { input.vx = vx; input.vy = vy; canvas.focus(); }
+      function setVector(vx, vy) { input.vx = vx; input.vy = vy; focusGame(); }
       function inHazard(x,y) {
         return cfg.hazards.some(h => x >= h[0] && x <= h[2] && y >= h[1] && y <= h[3]);
       }
@@ -2488,6 +2851,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       }
       function stepContinuous() {
         if (!cont || cont.won) return;
+        cont.effectCooldown = Math.max(0, cont.effectCooldown - 1);
         let vx = input.vx || ((input.right?1:0) - (input.left?1:0));
         let vy = input.vy || ((input.up?1:0) - (input.down?1:0));
         cont.vx = vx; cont.vy = vy;
@@ -2500,7 +2864,15 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         cont.steps += 1;
         const newDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
         cont.score += cfg.stepReward + cfg.progressScale * (oldDist - newDist);
-        if (inHazard(cont.x, cont.y)) { cont.score += cfg.hazardPenalty; cont.message = 'Danger zone. Get out.'; }
+        if (inHazard(cont.x, cont.y)) {
+          cont.score += cfg.hazardPenalty;
+          cont.message = 'Danger zone. Get out.';
+          if (cont.effectCooldown === 0) {
+            cont.hits += 1;
+            cont.effectCooldown = 30;
+            screenEffect('hit');
+          }
+        }
         if (cfg.obstacleMode) {
           const half = cfg.obstacleWidth / 2;
           for (const o of cont.obstacles) {
@@ -2516,6 +2888,9 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
               const resetDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
               cont.score += cfg.progressScale * (collisionDist - resetDist);
               cont.message = 'Portal collision. Teleported back to start.';
+              cont.hits += 1;
+              cont.effectCooldown = 30;
+              screenEffect('hit');
             }
           }
         }
@@ -2541,6 +2916,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
               emitBurst(arrival.x, arrival.y, '#c084fc', 34);
               cont.score += 7;
               cont.cooldown = 45;
+              screenEffect('reward');
               break;
             }
           }
@@ -2552,6 +2928,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           const goalBurst = continuousCanvasPoint(cont.x, cont.y);
           emitBurst(goalBurst.x, goalBurst.y, '#86efac', 52);
           cont.message = cfg.teleportMode ? 'Portal exit reached. Room cleared.' : 'Touchdown complete. Room cleared.';
+          screenEffect('win');
         }
         if (cont.steps % 3 === 0) cont.path.push([cont.x, cont.y]);
       }
@@ -2801,6 +3178,9 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         const atEnd = replayIndex === cfg.replay.states.length - 1;
         if (cfg.mode === 'grid') {
           grid.pos = [state[0], state[1]];
+          grid.visualFrom = grid.pos.slice();
+          grid.visualTo = grid.pos.slice();
+          grid.moveStarted = performance.now();
           grid.phase = cfg.kind === 'sarsa' ? 0 : (state[3] || 0);
           grid.score = score;
           grid.steps = replayIndex;
@@ -2884,7 +3264,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           gameStarted = true;
           hideGameOverlay();
           pauseBtn.textContent = 'PAUSE';
-          canvas.focus();
+          focusGame();
         }
         draw();
       });
@@ -2897,14 +3277,14 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         gamePaused = false;
         pauseBtn.textContent = 'PAUSE';
         hideGameOverlay();
-        canvas.focus();
+        focusGame();
       });
       pauseBtn.addEventListener('click', () => {
         if (cfg.replay || !gameStarted) return;
         gamePaused = !gamePaused;
         pauseBtn.textContent = gamePaused ? 'RESUME' : 'PAUSE';
         if (gamePaused) showGameOverlay('GAME PAUSED', cfg.title, 'Your run is frozen. Resume when you are ready.', 'RESUME');
-        else { hideGameOverlay(); canvas.focus(); }
+        else { hideGameOverlay(); focusGame(); }
       });
       root.querySelectorAll('[data-grid]').forEach(btn => btn.addEventListener('click', () => moveGrid(Number(btn.dataset.grid))));
       root.querySelectorAll('[data-v]').forEach(btn => {
@@ -2946,7 +3326,14 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           applyReplayFrame(replayIndex);
         }));
       }
-      canvas.addEventListener('keydown', e => {
+      const directionForKey = key => ({
+        arrowup: 'up', w: 'up',
+        arrowright: 'right', d: 'right',
+        arrowdown: 'down', s: 'down',
+        arrowleft: 'left', a: 'left'
+      })[key];
+      const actionForDirection = {up: 0, right: 1, down: 2, left: 3};
+      root.addEventListener('keydown', e => {
         if (cfg.replay) return;
         const k = e.key.toLowerCase();
         if (k === 'escape') {
@@ -2954,36 +3341,43 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           e.preventDefault();
           return;
         }
-        if (!gameStarted || gamePaused) return;
+        const direction = directionForKey(k);
+        if (!direction) return;
+        e.preventDefault();
+        setKeyboardActive(true);
+        setKeycap(direction, true);
+        if (!gameStarted) overlayAction.click();
+        if (gamePaused) return;
         if (cfg.mode === 'grid') {
-          if (k === 'arrowup' || k === 'w') moveGrid(0);
-          if (k === 'arrowright' || k === 'd') moveGrid(1);
-          if (k === 'arrowdown' || k === 's') moveGrid(2);
-          if (k === 'arrowleft' || k === 'a') moveGrid(3);
+          if (!e.repeat) moveGrid(actionForDirection[direction]);
         } else {
-          if (k === 'arrowup' || k === 'w') input.up = true;
-          if (k === 'arrowright' || k === 'd') input.right = true;
-          if (k === 'arrowdown' || k === 's') input.down = true;
-          if (k === 'arrowleft' || k === 'a') input.left = true;
+          input[direction] = true;
         }
+      });
+      root.addEventListener('keyup', e => {
+        const direction = directionForKey(e.key.toLowerCase());
+        if (!direction) return;
+        input[direction] = false;
+        setKeycap(direction, false);
         e.preventDefault();
       });
-      canvas.addEventListener('keyup', e => {
-        const k = e.key.toLowerCase();
-        if (k === 'arrowup' || k === 'w') input.up = false;
-        if (k === 'arrowright' || k === 'd') input.right = false;
-        if (k === 'arrowdown' || k === 's') input.down = false;
-        if (k === 'arrowleft' || k === 'a') input.left = false;
-        e.preventDefault();
+      root.addEventListener('focusin', () => setKeyboardActive(!cfg.replay));
+      root.addEventListener('focusout', e => {
+        if (!root.contains(e.relatedTarget)) setKeyboardActive(false);
       });
-      canvas.addEventListener('click', () => canvas.focus());
+      window.addEventListener('blur', () => {
+        input.left = input.right = input.up = input.down = false;
+        ['up', 'right', 'down', 'left'].forEach(direction => setKeycap(direction, false));
+        setKeyboardActive(false);
+      });
+      canvas.addEventListener('pointerdown', focusGame);
       if (cfg.mode === 'grid') initGrid(); else initContinuous();
       if (cfg.replay) applyReplayFrame(0);
       loop();
       </script>
     </div>
     """
-    components.html(template.replace("__CONFIG__", config), height=760, scrolling=False)
+    components.html(template.replace("__CONFIG__", config), height=880, scrolling=False)
 
 
 def init_manual(room_kind: str) -> None:

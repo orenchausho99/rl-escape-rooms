@@ -52,6 +52,14 @@ python -m unittest discover -s tests -v
 
 The fifth room also supports generating an unseen random room and testing the learned policy without additional training.
 
+## Manual Game Controls
+
+- Click `Start Mission`, then use the keyboard directly inside the arena.
+- Grid rooms: press the arrow keys or `W`, `A`, `S`, `D` once per tile.
+- Continuous rooms: hold the arrow keys or `W`, `A`, `S`, `D` to set the discrete velocity.
+- On mobile, the same actions are available through large touch controls below the arena.
+- The live HUD shows keyboard focus, mission progress, score, steps, goal, and current status.
+
 ## Project Structure
 
 ```text
