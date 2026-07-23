@@ -430,7 +430,11 @@ class ContinuousRoomConfig:
     start: Tuple[float, float] = (0.5, 0.5)
     goal: Tuple[float, float] = (9.45, 9.45)
     goal_radius: float = 0.42
-    hazards: Tuple[Tuple[float, float, float, float], ...] = ()
+    hazards: Tuple[Tuple[float, float, float, float], ...] = (
+        (1.7, 2.2, 3.8, 2.8),
+        (4.3, 4.0, 5.1, 6.5),
+        (6.0, 7.1, 8.3, 7.7),
+    )
     step_reward: float = -0.015
     goal_reward: float = 35.0
     wall_penalty: float = -0.6
@@ -476,6 +480,7 @@ class ContinuousEscapeRoom:
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, object]]:
         self.vx, self.vy = CONTINUOUS_ACTIONS[action]
+        old_x, old_y = self.x, self.y
         old_distance = self.distance_to_goal()
         nx = self.x + self.vx * self.config.speed * self.config.dt
         ny = self.y + self.vy * self.config.speed * self.config.dt
@@ -491,13 +496,16 @@ class ContinuousEscapeRoom:
         if hit_wall:
             reward += self.config.wall_penalty
 
+        hit_hazard = self._inside_hazard(nx, ny)
+        if hit_hazard:
+            reward += self.config.hazard_penalty
+            nx, ny = old_x, old_y
+            self.vx = 0
+            self.vy = 0
+
         self.x, self.y = nx, ny
         new_distance = self.distance_to_goal()
         reward += self.config.progress_scale * (old_distance - new_distance)
-
-        hit_hazard = self._inside_hazard(self.x, self.y)
-        if hit_hazard:
-            reward += self.config.hazard_penalty
 
         self.steps += 1
         done = new_distance <= self.config.goal_radius

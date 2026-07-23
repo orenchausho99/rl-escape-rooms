@@ -207,7 +207,9 @@ Vx, Vy in {-1, 0, 1}
 
 There are nine discrete actions. Position remains continuous.
 
-Terminal condition: enter the radius around `PAD`.
+The room contains three fixed asteroid fields. Their positions are part of the environment layout, so no extra observation variables are required. Entering a field blocks the move, resets `Vx,Vy` to zero, and applies a collision penalty.
+
+Terminal condition: enter the radius around `PAD` after navigating around the asteroid fields.
 
 Rewards:
 
@@ -217,10 +219,11 @@ Rewards:
 | Progress | `5 * (old_distance - new_distance)` |
 | Reach PAD | +55 |
 | Wall collision | -0.6 |
+| Asteroid collision | -2.5 and velocity reset |
 
 Verified parameters: `episodes=450`, `max_steps=850`, `alpha=0.08`, `gamma=0.985`, `epsilon=0.40`, `epsilon_min=0.03`, `epsilon_decay=0.993`.
 
-Verification result: 45/50 of the final episodes succeeded, averaging 551.38 time steps.
+Verification result with the asteroid fields enabled: 43/50 of the final episodes succeeded, averaging 670.14 time steps.
 
 Why approximation is required: continuous positions create too many states for a tabular Q-table. Features include normalized position, goal direction, distance, discrete velocity, and six offset tile codings.
 

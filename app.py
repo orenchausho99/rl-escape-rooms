@@ -128,7 +128,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "algorithm": "Approximate Q-Learning",
         "inspiration": "Inspired by Lunar Lander",
         "art": "lunar-lander-arena.webp",
-        "mission": "Choose a discrete velocity every 0.02 seconds and guide the lander across a continuous 10x10 meter room to PAD.",
+        "mission": "Choose a discrete velocity every 0.02 seconds, avoid asteroid fields, and guide the lander across a continuous 10x10 meter room to PAD.",
         "agent": "LANDER",
         "goal": "PAD",
         "state": "X, Y, Vx, Vy",
@@ -140,7 +140,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "danger": "#ef4444",
         "key": "#fde047",
         "portal": "#a855f7",
-        "objectives": ["Choose velocity", "Minimize time", "Touch down on PAD"],
+        "objectives": ["Avoid asteroid fields", "Minimize time", "Touch down on PAD"],
     },
     "obstacles": {
         "menu": "5. Portal Hazard Run",
@@ -3508,7 +3508,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           }
           cont.message = 'Portal hazards move. Observe forward and reach EXIT.';
         } else {
-          cont.message = 'Choose one of nine discrete velocities every 0.02 seconds and reach PAD.';
+          cont.message = 'Avoid the asteroid fields and reach PAD using one of nine discrete velocities.';
         }
       }
       function setVector(vx, vy) { input.vx = vx; input.vy = vy; focusGame(); }
@@ -3528,6 +3528,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         let vx = input.vx || ((input.right?1:0) - (input.left?1:0));
         let vy = input.vy || ((input.up?1:0) - (input.down?1:0));
         cont.vx = vx; cont.vy = vy;
+        const oldX = cont.x, oldY = cont.y;
         const oldDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
         const speed = 0.02;
         const rawX = cont.x + vx * speed, rawY = cont.y + vy * speed;
@@ -3535,17 +3536,23 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         cont.x = clamp(rawX, 0, cfg.roomSize);
         cont.y = clamp(rawY, 0, cfg.roomSize);
         cont.steps += 1;
-        const newDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
-        cont.score += cfg.stepReward + cfg.progressScale * (oldDist - newDist);
         if (inHazard(cont.x, cont.y)) {
           cont.score += cfg.hazardPenalty;
-          cont.message = 'Danger zone. Get out.';
+          const collision = continuousCanvasPoint(cont.x, cont.y);
+          cont.x = oldX;
+          cont.y = oldY;
+          cont.vx = 0;
+          cont.vy = 0;
+          cont.message = 'Asteroid impact. Velocity reset; choose a route around the field.';
           if (cont.effectCooldown === 0) {
             cont.hits += 1;
             cont.effectCooldown = 30;
+            emitBurst(collision.x, collision.y, '#fb923c', 34);
             screenEffect('hit');
           }
         }
+        const newDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
+        cont.score += cfg.stepReward + cfg.progressScale * (oldDist - newDist);
         if (cfg.obstacleMode) {
           const half = cfg.obstacleWidth / 2;
           for (const o of cont.obstacles) {
@@ -3757,7 +3764,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
             ctx.fillStyle = 'rgba(248,113,113,.65)';
             ctx.fill();
           }
-          writeLabel('METEORS', x+w/2, y+hh/2+4, 11, '#fecaca');
+          writeLabel('ASTEROID FIELD', x+w/2, y+hh/2+4, 10, '#fee2e2');
         }
         for (const meteor of cont.meteors) {
           const mx = m.toX(meteor.x), my = m.toY(meteor.y);
