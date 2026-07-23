@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -18,6 +19,11 @@ from escape_room.replay import filter_replay_attempts, replay_library_rows
 
 
 class ProjectRequirementTests(unittest.TestCase):
+    def test_static_art_urls_work_behind_streamlit_cloud_prefix(self):
+        app_source = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
+        self.assertIn("app/static/game_art/", app_source)
+        self.assertNotIn("/app/static/game_art/", app_source)
+
     def test_first_three_rooms_are_10_by_10(self):
         rooms = [
             GridEscapeRoom(room1_config()),

@@ -1666,7 +1666,7 @@ def room_intro(room_kind: str) -> None:
     objectives = "".join(f'<div class="objective">{html.escape(item)}</div>' for item in t["objectives"])
     st.markdown(
         f"""
-        <div class="game-card" style="{style_vars(room_kind)};background-image:url('/app/static/game_art/{html.escape(t['art'])}');">
+        <div class="game-card" style="{style_vars(room_kind)};background-image:url('app/static/game_art/{html.escape(t['art'])}');">
           <div class="mission-kicker">
             <span class="room-index">Room {room_number:02d}</span>
             <span>{model_label}</span>
@@ -1887,7 +1887,7 @@ def arcade_payload(room_kind: str, replay_attempt: Dict[str, Any] | None = None)
         "algorithm": theme["algorithm"],
         "mission": theme["mission"],
         "objectives": theme["objectives"],
-        "artUrl": f"/app/static/game_art/{theme['art']}",
+        "artUrl": f"app/static/game_art/{theme['art']}",
         "agent": theme["agent"],
         "goalLabel": theme["goal"],
         "colors": {
@@ -5009,7 +5009,7 @@ def render_room_selection() -> None:
                         <span class="room-number">Room {room_number:02d}</span>
                         <span class="room-status {status_class}">{status}</span>
                       </div>
-                      <div class="screen preview-{room_kind}" style="background-image:linear-gradient(180deg,rgba(2,6,23,.08),rgba(2,6,23,.62)),url('/app/static/game_art/{html.escape(t['art'])}');background-size:cover;background-position:center;">
+                      <div class="screen preview-{room_kind}" style="background-image:linear-gradient(180deg,rgba(2,6,23,.08),rgba(2,6,23,.62)),url('app/static/game_art/{html.escape(t['art'])}');background-size:cover;background-position:center;">
                         {thumbnail_markup(room_kind)}
                       </div>
                       <h3>{html.escape(t["title"])}</h3>
