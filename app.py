@@ -799,7 +799,11 @@ def css() -> None:
         }
         .room-select-card {
             --accent: #38bdf8;
-            min-height: 430px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            height: 510px;
+            min-height: 510px;
             border: 1px solid #303741;
             border-top: 3px solid var(--accent);
             background: #12161c;
@@ -815,6 +819,7 @@ def css() -> None:
             box-shadow: 0 22px 50px rgba(0,0,0,.38);
         }
         .room-select-card .screen {
+            flex: 0 0 160px;
             height: 160px;
             border-radius: 6px;
             border: 1px solid color-mix(in srgb, var(--accent), white 15%);
@@ -1238,7 +1243,8 @@ def css() -> None:
         .room-objectives {
             display: grid;
             gap: 5px;
-            margin-top: 12px;
+            margin-top: auto;
+            padding-top: 12px;
         }
         .room-objectives span {
             display: flex;
@@ -1497,7 +1503,17 @@ def css() -> None:
             border-radius: 7px;
             background: #11151b;
         }
+        @media (min-width: 761px) and (max-width: 1100px) {
+            .room-select-card {
+                height: 570px;
+                min-height: 570px;
+            }
+        }
         @media (max-width: 760px) {
+            .room-select-card {
+                height: auto;
+                min-height: 0;
+            }
             .topbar-inner {
                 align-items: flex-start;
             }
