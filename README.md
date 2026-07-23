@@ -207,7 +207,7 @@ Vx, Vy in {-1, 0, 1}
 
 There are nine discrete actions. Position remains continuous.
 
-The room contains three fixed asteroid fields. Their positions are part of the environment layout, so no extra observation variables are required. Entering a field blocks the move, resets `Vx,Vy` to zero, and applies a collision penalty.
+The room contains three fixed asteroid corridors. The arcade renderer animates irregular flaming rocks, embers, rotation, and fire trails inside each corridor. The complete swept corridor remains the collision region in the RL environment, so its location is part of the fixed layout and no extra observation variables are required. Entering a corridor blocks the move, resets `Vx,Vy` to zero, and applies a collision penalty.
 
 Terminal condition: enter the radius around `PAD` after navigating around the asteroid fields.
 

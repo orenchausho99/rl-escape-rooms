@@ -3508,12 +3508,49 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           }
           cont.message = 'Portal hazards move. Observe forward and reach EXIT.';
         } else {
+          for (const [zone, h] of cfg.hazards.entries()) {
+            const horizontal = (h[2] - h[0]) >= (h[3] - h[1]);
+            const count = horizontal ? 3 : 4;
+            for (let i = 0; i < count; i++) {
+              const progress = (i + .5) / count;
+              const direction = (i + zone) % 2 === 0 ? 1 : -1;
+              cont.meteors.push({
+                zone,
+                x: horizontal ? h[0] + (h[2] - h[0]) * progress : (h[0] + h[2]) / 2 + (i % 2 ? .10 : -.10),
+                y: horizontal ? (h[1] + h[3]) / 2 + (i % 2 ? .08 : -.08) : h[1] + (h[3] - h[1]) * progress,
+                dx: horizontal ? direction * (.007 + i * .0015) : 0,
+                dy: horizontal ? 0 : direction * (.007 + i * .0012),
+                r: .22 + (i % 3) * .025,
+                spin: rand(0, Math.PI * 2),
+                spinRate: direction * (.022 + i * .004),
+                seed: zone * 11 + i * 7 + 3
+              });
+            }
+          }
           cont.message = 'Avoid the asteroid fields and reach PAD using one of nine discrete velocities.';
         }
       }
       function setVector(vx, vy) { input.vx = vx; input.vy = vy; focusGame(); }
       function inHazard(x,y) {
         return cfg.hazards.some(h => x >= h[0] && x <= h[2] && y >= h[1] && y <= h[3]);
+      }
+      function updateLanderMeteors(scale=1) {
+        if (cfg.obstacleMode || cfg.teleportMode) return;
+        for (const meteor of cont.meteors || []) {
+          const h = cfg.hazards[meteor.zone];
+          meteor.x += meteor.dx * scale;
+          meteor.y += meteor.dy * scale;
+          meteor.spin += meteor.spinRate * scale;
+          const margin = meteor.r * .7;
+          if (meteor.x < h[0] + margin || meteor.x > h[2] - margin) {
+            meteor.dx *= -1;
+            meteor.x = clamp(meteor.x, h[0] + margin, h[2] - margin);
+          }
+          if (meteor.y < h[1] + margin || meteor.y > h[3] - margin) {
+            meteor.dy *= -1;
+            meteor.y = clamp(meteor.y, h[1] + margin, h[3] - margin);
+          }
+        }
       }
       function continuousCanvasPoint(x, y) {
         if (cfg.teleportMode) {
@@ -3525,6 +3562,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       function stepContinuous() {
         if (!cont || cont.won) return;
         cont.effectCooldown = Math.max(0, cont.effectCooldown - 1);
+        updateLanderMeteors();
         let vx = input.vx || ((input.right?1:0) - (input.left?1:0));
         let vy = input.vy || ((input.up?1:0) - (input.down?1:0));
         cont.vx = vx; cont.vy = vy;
@@ -3737,6 +3775,86 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         ctx.beginPath(); ctx.arc(0, -45, 4, 0, Math.PI*2); ctx.fill();
         ctx.restore();
       }
+      function drawFlamingMeteor(meteor, map, index) {
+        const mx = map.toX(meteor.x);
+        const my = map.toY(meteor.y);
+        const mr = meteor.r / cfg.roomSize * map.bw;
+        const screenDx = meteor.dx;
+        const screenDy = -meteor.dy;
+        const heading = Math.atan2(screenDy, screenDx || .0001);
+        const pulse = .88 + Math.sin(animTick() * .32 + index) * .12;
+
+        ctx.save();
+        ctx.translate(mx, my);
+        ctx.rotate(heading);
+        ctx.globalCompositeOperation = 'screen';
+        const glow = ctx.createRadialGradient(-mr * 1.4, 0, 1, -mr * 1.4, 0, mr * 3.4);
+        glow.addColorStop(0, 'rgba(254,240,138,.82)');
+        glow.addColorStop(.35, 'rgba(249,115,22,.46)');
+        glow.addColorStop(1, 'rgba(239,68,68,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.ellipse(-mr * 1.6, 0, mr * 3.5, mr * 1.45, 0, 0, Math.PI * 2); ctx.fill();
+        const flame = ctx.createLinearGradient(-mr * 4.3, 0, mr * .2, 0);
+        flame.addColorStop(0, 'rgba(239,68,68,0)');
+        flame.addColorStop(.28, '#ef4444');
+        flame.addColorStop(.62, '#f97316');
+        flame.addColorStop(1, '#fef08a');
+        ctx.fillStyle = flame;
+        ctx.beginPath();
+        ctx.moveTo(mr * .15, -mr * .62);
+        ctx.quadraticCurveTo(-mr * 1.5, -mr * 1.25 * pulse, -mr * 4.2, -mr * .18);
+        ctx.quadraticCurveTo(-mr * 2.8, 0, -mr * 4.6, mr * .3);
+        ctx.quadraticCurveTo(-mr * 1.6, mr * 1.1 * pulse, mr * .15, mr * .58);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = '#fbbf24';
+        for (let ember = 0; ember < 4; ember++) {
+          const travel = ((animTick() * (.13 + ember * .02) + meteor.seed * 7 + ember * 19) % 42);
+          const ey = Math.sin(animTick() * .09 + ember * 2 + meteor.seed) * mr * .65;
+          ctx.beginPath();
+          ctx.arc(-mr * 1.1 - travel, ey, Math.max(1.5, mr * (.16 - ember * .018)), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+
+        ctx.save();
+        ctx.translate(mx, my);
+        ctx.rotate(meteor.spin);
+        ctx.shadowColor = '#fb923c';
+        ctx.shadowBlur = 12;
+        const rock = ctx.createRadialGradient(-mr * .35, -mr * .35, mr * .1, 0, 0, mr * 1.25);
+        rock.addColorStop(0, '#fdba74');
+        rock.addColorStop(.28, '#9a3412');
+        rock.addColorStop(.7, '#431407');
+        rock.addColorStop(1, '#1c0a04');
+        ctx.fillStyle = rock;
+        ctx.beginPath();
+        for (let point = 0; point < 11; point++) {
+          const angle = point / 11 * Math.PI * 2;
+          const wobble = .80 + ((point * 17 + meteor.seed * 13) % 29) / 100;
+          const x = Math.cos(angle) * mr * wobble;
+          const y = Math.sin(angle) * mr * wobble;
+          if (point === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#fb923c';
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(28,10,4,.78)';
+        ctx.beginPath(); ctx.arc(-mr * .28, -mr * .18, mr * .23, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(mr * .34, mr * .25, mr * .17, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#fed7aa';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-mr * .05, -mr * .55);
+        ctx.lineTo(mr * .12, -mr * .16);
+        ctx.lineTo(-mr * .08, mr * .12);
+        ctx.stroke();
+        ctx.restore();
+      }
       function drawDroneLanding() {
         drawArtBase(.18);
         ctx.fillStyle = 'rgba(2,6,23,.66)';
@@ -3757,25 +3875,13 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         }
         for (const h of cfg.hazards) {
           const x = m.toX(h[0]), y = m.toY(h[3]), w = (h[2]-h[0])/cfg.roomSize*m.bw, hh = (h[3]-h[1])/cfg.roomSize*m.bh;
-          rr(x, y, w, hh, 16, 'rgba(239,68,68,.24)', '#ef4444');
-          for (let i=0;i<5;i++) {
-            ctx.beginPath();
-            ctx.arc(x + 18 + (i * 37) % Math.max(38, w - 20), y + 14 + (i * 23) % Math.max(28, hh - 16), 8 + (i % 2) * 4, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(248,113,113,.65)';
-            ctx.fill();
-          }
-          writeLabel('ASTEROID FIELD', x+w/2, y+hh/2+4, 10, '#fee2e2');
+          ctx.save();
+          ctx.setLineDash([8, 7]);
+          rr(x, y, w, hh, 14, 'rgba(127,29,29,.08)', 'rgba(248,113,113,.40)');
+          ctx.restore();
+          writeLabel('METEOR LANE', x+w/2, y+12, 8, 'rgba(254,202,202,.82)');
         }
-        for (const meteor of cont.meteors) {
-          const mx = m.toX(meteor.x), my = m.toY(meteor.y);
-          const mr = meteor.r / cfg.roomSize * m.bw;
-          ctx.beginPath(); ctx.arc(mx, my, mr + 5, 0, Math.PI*2);
-          ctx.fillStyle = 'rgba(251,146,60,.18)'; ctx.fill();
-          ctx.beginPath(); ctx.arc(mx, my, mr, 0, Math.PI*2);
-          ctx.fillStyle = '#9a3412'; ctx.fill(); ctx.strokeStyle = '#fdba74'; ctx.lineWidth = 3; ctx.stroke();
-          ctx.beginPath(); ctx.arc(mx-mr*.25, my-mr*.18, Math.max(2,mr*.22), 0, Math.PI*2);
-          ctx.fillStyle = '#431407'; ctx.fill();
-        }
+        for (const [index, meteor] of cont.meteors.entries()) drawFlamingMeteor(meteor, m, index);
         ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 3; ctx.beginPath();
         cont.path.forEach((p, i) => { const x = m.toX(p[0]), y = m.toY(p[1]); if (i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
         ctx.stroke();
@@ -3987,12 +4093,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         if (!replayDecorLast) replayDecorLast = now;
         const scale = Math.min(2, (now - replayDecorLast) / 16.67);
         replayDecorLast = now;
-        for (const meteor of cont.meteors || []) {
-          meteor.x += meteor.dx * scale;
-          meteor.y += meteor.dy * scale;
-          if (meteor.x < .5 || meteor.x > 9.5) meteor.dx *= -1;
-          if (meteor.y < .5 || meteor.y > 9.5) meteor.dy *= -1;
-        }
+        updateLanderMeteors(scale);
       }
       function loop(now) {
         if (cfg.replay) {
