@@ -207,7 +207,7 @@ Vx, Vy in {-1, 0, 1}
 
 There are nine discrete actions. Position remains continuous.
 
-The room contains three fixed asteroid corridors. The arcade renderer animates irregular flaming rocks, embers, rotation, and fire trails inside each corridor. The complete swept corridor remains the collision region in the RL environment, so its location is part of the fixed layout and no extra observation variables are required. Entering a corridor blocks the move, resets `Vx,Vy` to zero, and applies a collision penalty.
+The room contains five asteroid corridors distributed across the 10x10 meter arena, including two additional fields in previously empty corners. The arcade renderer animates 15 irregular flaming rocks with embers, rotation, and fire trails across those corridors. The complete swept corridor remains the collision region in the RL environment, so its location is part of the fixed layout and no extra observation variables are required. Entering a corridor blocks the move, resets `Vx,Vy` to zero, and applies a collision penalty.
 
 Terminal condition: enter the radius around `PAD` after navigating around the asteroid fields.
 
@@ -223,7 +223,7 @@ Rewards:
 
 Verified parameters: `episodes=450`, `max_steps=850`, `alpha=0.08`, `gamma=0.985`, `epsilon=0.40`, `epsilon_min=0.03`, `epsilon_decay=0.993`.
 
-Verification result with the asteroid fields enabled: 43/50 of the final episodes succeeded, averaging 670.14 time steps.
+Verification result with all five asteroid fields enabled: 37/50 of the final episodes succeeded, averaging 714.36 time steps.
 
 Why approximation is required: continuous positions create too many states for a tabular Q-table. Features include normalized position, goal direction, distance, discrete velocity, and six offset tile codings.
 

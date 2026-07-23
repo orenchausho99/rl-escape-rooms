@@ -70,7 +70,7 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertEqual(config.dt, 0.02)
         self.assertEqual(len(CONTINUOUS_ACTIONS), 9)
         self.assertEqual(set(CONTINUOUS_ACTIONS), {(x, y) for x in (-1, 0, 1) for y in (-1, 0, 1)})
-        self.assertEqual(len(config.hazards), 3)
+        self.assertEqual(len(config.hazards), 5)
         state, _, _, _ = room.step(8)
         np.testing.assert_allclose(state, np.array([0.52, 0.52, 1.0, 1.0]))
         hazard_x, hazard_y, _, hazard_top = config.hazards[0]

@@ -3526,7 +3526,8 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         } else {
           for (const [zone, h] of cfg.hazards.entries()) {
             const horizontal = (h[2] - h[0]) >= (h[3] - h[1]);
-            const count = horizontal ? 3 : 4;
+            const span = horizontal ? h[2] - h[0] : h[3] - h[1];
+            const count = Math.max(3, Math.min(5, Math.round(span)));
             for (let i = 0; i < count; i++) {
               const progress = (i + .5) / count;
               const direction = (i + zone) % 2 === 0 ? 1 : -1;
