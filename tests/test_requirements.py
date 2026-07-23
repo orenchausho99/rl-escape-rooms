@@ -14,6 +14,7 @@ from escape_room.envs import (
     room2_config,
     room3_config,
 )
+from escape_room.replay import filter_replay_attempts, replay_library_rows
 
 
 class ProjectRequirementTests(unittest.TestCase):
@@ -78,6 +79,21 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertEqual(len(room.obstacles), 6)
         self.assertEqual(config.observation_range, 4.0)
         self.assertEqual(len(state), 7)
+
+    def test_replay_library_contains_every_episode(self):
+        attempts = [
+            {"episode": 1, "reward": -4.0, "steps": 5, "success": False, "epsilon": 0.8},
+            {"episode": 2, "reward": 12.0, "steps": 4, "success": True, "epsilon": 0.5},
+            {"episode": 3, "reward": 20.0, "steps": 3, "success": True, "epsilon": 0.2},
+        ]
+        filtered = filter_replay_attempts(attempts, "All episodes", "Episode: oldest first")
+        rows = replay_library_rows(filtered, total_episodes=3)
+        self.assertEqual([row["Episode"] for row in rows], [1, 2, 3])
+        self.assertEqual(len(rows), len(attempts))
+        self.assertEqual(
+            [item["episode"] for item in filter_replay_attempts(attempts, "Successful only", "Score: highest first")],
+            [3, 2],
+        )
 
 
 if __name__ == "__main__":

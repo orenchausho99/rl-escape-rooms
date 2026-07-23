@@ -262,7 +262,8 @@ SARSA, Q-Learning, and Approximate Q-Learning record every exploratory episode. 
 
 Replay supports:
 
-- Any recorded episode.
+- A complete table containing every recorded training episode.
+- Direct episode selection plus previous/next episode navigation.
 - Successful or failed filtering.
 - Sorting by episode or reward.
 - Play, pause, single-step navigation, timeline scrubbing, and playback speed.

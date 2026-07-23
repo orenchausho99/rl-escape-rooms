@@ -37,6 +37,7 @@ from escape_room.envs import (
     room2_config,
     room3_config,
 )
+from escape_room.replay import filter_replay_attempts, replay_library_rows
 
 
 st.set_page_config(page_title="RL Escape Rooms", layout="wide", initial_sidebar_state="collapsed")
@@ -1061,6 +1062,13 @@ def css() -> None:
             color: #f8fafc !important;
             font-weight: 900 !important;
             font-size: .96rem !important;
+            opacity: 1 !important;
+        }
+        [data-testid="stRadio"] label,
+        [data-testid="stRadio"] label p,
+        [data-testid="stRadio"] label span {
+            color: #e5e7eb !important;
+            font-weight: 800 !important;
             opacity: 1 !important;
         }
         [data-testid="stForm"] {
@@ -3428,15 +3436,15 @@ def render_replay_tab(room_kind: str) -> None:
         ],
     )
     st.markdown(
-        '<div class="small-note"><b>Complete attempt library.</b> Select any episode below, then use the player controls inside the game to pause, step, scrub the timeline, or change speed.</div>',
+        '<div class="small-note"><b>Complete episode library.</b> Every row is one full agent episode recorded during training. Filter the library, choose an episode in the player, and inspect its exact movement step by step.</div>',
         unsafe_allow_html=True,
     )
 
     filter_col, sort_col = st.columns([1, 1])
     with filter_col:
         outcome = st.radio(
-            "Attempt result",
-            ["All attempts", "Successful only", "Failed only"],
+            "Episode result",
+            ["All episodes", "Successful only", "Failed only"],
             horizontal=True,
             key=f"replay_outcome_{room_kind}",
         )
@@ -3447,40 +3455,87 @@ def render_replay_tab(room_kind: str) -> None:
             key=f"replay_order_{room_kind}",
         )
 
-    filtered = [
-        attempt
-        for attempt in attempts
-        if outcome == "All attempts"
-        or (outcome == "Successful only" and bool(attempt["success"]))
-        or (outcome == "Failed only" and not bool(attempt["success"]))
-    ]
-    if ordering == "Episode: newest first":
-        filtered.sort(key=lambda attempt: int(attempt["episode"]), reverse=True)
-    elif ordering == "Episode: oldest first":
-        filtered.sort(key=lambda attempt: int(attempt["episode"]))
-    else:
-        filtered.sort(key=lambda attempt: float(attempt["reward"]), reverse=True)
+    filtered = filter_replay_attempts(attempts, outcome, ordering)
 
     if not filtered:
-        st.warning("No attempts match this filter.")
+        st.warning("No episodes match this filter.")
         return
 
-    def attempt_label(index: int) -> str:
-        attempt = filtered[index]
+    total_episodes = max(int(attempt["episode"]) for attempt in attempts)
+    library = pd.DataFrame(replay_library_rows(filtered, total_episodes))
+    st.subheader(f"All Recorded Episodes ({len(filtered)} shown of {len(attempts)})")
+    st.dataframe(
+        library,
+        width="stretch",
+        height=min(520, 42 + 35 * len(library)),
+        hide_index=True,
+        column_config={
+            "Episode": st.column_config.NumberColumn("Episode", format="%d"),
+            "Result": st.column_config.TextColumn("Result"),
+            "Reward": st.column_config.NumberColumn("Total reward", format="%.2f"),
+            "Steps": st.column_config.NumberColumn("Steps", format="%d"),
+            "Epsilon": st.column_config.NumberColumn("Exploration epsilon", format="%.4f"),
+            "Training phase": st.column_config.TextColumn("Training phase"),
+        },
+    )
+
+    attempts_by_episode = {int(attempt["episode"]): attempt for attempt in filtered}
+    episode_options = [int(attempt["episode"]) for attempt in filtered]
+    selection_key = f"replay_selected_episode_{room_kind}"
+    if st.session_state.get(selection_key) not in episode_options:
+        st.session_state[selection_key] = episode_options[0]
+
+    def episode_label(episode: int) -> str:
+        attempt = attempts_by_episode[episode]
         outcome_label = "SUCCESS" if attempt["success"] else "FAILED"
         epsilon_label = f" | epsilon {float(attempt['epsilon']):.3f}" if "epsilon" in attempt else ""
         return (
-            f"Episode {int(attempt['episode'])} | {outcome_label} | "
+            f"Episode {episode} | {outcome_label} | "
             f"score {float(attempt['reward']):.1f} | {int(attempt['steps'])} steps{epsilon_label}"
         )
 
-    selected_index = st.selectbox(
-        "Choose an episode to replay",
-        range(len(filtered)),
-        format_func=attempt_label,
-        key=f"replay_episode_{room_kind}_{outcome}_{ordering}",
+    def move_episode(delta: int) -> None:
+        current = int(st.session_state.get(selection_key, episode_options[0]))
+        current_index = episode_options.index(current) if current in episode_options else 0
+        next_index = min(len(episode_options) - 1, max(0, current_index + delta))
+        st.session_state[selection_key] = episode_options[next_index]
+
+    current_episode = int(st.session_state[selection_key])
+    current_index = episode_options.index(current_episode)
+    st.subheader("Episode Player")
+    previous_col, select_col, next_col = st.columns([0.22, 0.56, 0.22])
+    with previous_col:
+        st.button(
+            "Previous episode",
+            key=f"replay_previous_{room_kind}",
+            use_container_width=True,
+            disabled=current_index == 0,
+            on_click=move_episode,
+            args=(-1,),
+        )
+    with select_col:
+        selected_episode = st.selectbox(
+            "Choose any episode to replay",
+            episode_options,
+            format_func=episode_label,
+            key=selection_key,
+        )
+    with next_col:
+        st.button(
+            "Next episode",
+            key=f"replay_next_{room_kind}",
+            use_container_width=True,
+            disabled=current_index == len(episode_options) - 1,
+            on_click=move_episode,
+            args=(1,),
+        )
+
+    selected_index = episode_options.index(int(selected_episode))
+    selected_attempt = attempts_by_episode[int(selected_episode)]
+    st.caption(
+        f"Showing episode {selected_index + 1} of {len(episode_options)} in the current view. "
+        "Use the controls inside the game to play, pause, step, scrub, and change speed."
     )
-    selected_attempt = filtered[selected_index]
     arcade_component(room_kind, selected_attempt)
 
 
