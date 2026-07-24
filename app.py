@@ -63,6 +63,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "inspiration": "Inspired by Pac-Man",
         "art": "pacman-ice-arena.webp",
         "thumbnail_art": "pacman-ice-thumbnail-v2.webp",
+        "banner_art": "pacman-ice-banner-v2.webp",
         "mission": "Reach EXIT quickly, avoid moving ghosts and cracks, and handle slippery ice. The complete transition model is known to Value Iteration.",
         "agent": "PAC",
         "goal": "EXIT",
@@ -86,6 +87,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "inspiration": "Inspired by Sokoban",
         "art": "sokoban-vault-arena.webp",
         "thumbnail_art": "sokoban-vault-thumbnail-v2.webp",
+        "banner_art": "sokoban-vault-banner-v2.webp",
         "mission": "Push the BOX onto the target tile, avoid lasers, then enter SAFE. SARSA learns from its actual exploratory moves.",
         "agent": "PUSH",
         "goal": "SAFE",
@@ -109,6 +111,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "inspiration": "Inspired by Bomberman",
         "art": "bomberman-reactor-arena.webp",
         "thumbnail_art": "bomberman-reactor-thumbnail-v2.webp",
+        "banner_art": "bomberman-reactor-banner-v2.webp",
         "mission": "Collect two CORE items, avoid bomb blasts and patrol bots, use WARP tunnels, then escape through GATE.",
         "agent": "BOMB",
         "goal": "GATE",
@@ -132,6 +135,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "inspiration": "Inspired by Lunar Lander",
         "art": "lunar-lander-arena.webp",
         "thumbnail_art": "lunar-lander-thumbnail-v2.webp",
+        "banner_art": "lunar-lander-banner-v2.webp",
         "mission": "Choose a discrete velocity every 0.02 seconds, avoid asteroid fields, and guide the lander across a continuous 10x10 meter room to PAD.",
         "agent": "LANDER",
         "goal": "PAD",
@@ -154,6 +158,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "inspiration": "Inspired by Portal",
         "art": "portal-arena.webp",
         "thumbnail_art": "portal-hazard-thumbnail-v2.webp",
+        "banner_art": "portal-hazard-banner-v2.webp",
         "mission": "Avoid moving portal hazards and reach EXIT. The agent observes only the nearest portal within X meters in front of it.",
         "agent": "PORTAL",
         "goal": "EXIT",
@@ -361,7 +366,7 @@ def css() -> None:
         .game-card {
             --accent: #38bdf8;
             position: relative;
-            min-height: 262px;
+            min-height: 300px;
             overflow: hidden;
             border: 1px solid color-mix(in srgb, var(--accent), #303640 64%);
             border-radius: 8px;
@@ -376,7 +381,9 @@ def css() -> None:
             content: "";
             position: absolute;
             inset: 0;
-            background: linear-gradient(90deg, rgba(5,7,10,.98) 0%, rgba(5,7,10,.92) 47%, rgba(5,7,10,.52) 100%);
+            background:
+                linear-gradient(90deg, rgba(5,7,10,.97) 0%, rgba(5,7,10,.88) 40%, rgba(5,7,10,.38) 68%, rgba(5,7,10,.12) 100%),
+                linear-gradient(180deg, rgba(5,7,10,.08), rgba(5,7,10,.30));
         }
         .game-card > * {
             position: relative;
@@ -1585,7 +1592,9 @@ def css() -> None:
                 padding: 18px;
             }
             .game-card::before {
-                background: linear-gradient(180deg, rgba(5,7,10,.96) 0%, rgba(5,7,10,.84) 68%, rgba(5,7,10,.68) 100%);
+                background:
+                    linear-gradient(180deg, rgba(5,7,10,.90) 0%, rgba(5,7,10,.76) 62%, rgba(5,7,10,.56) 100%),
+                    linear-gradient(90deg, rgba(5,7,10,.58), rgba(5,7,10,.16));
             }
             .game-card h2 {
                 font-size: 1.65rem;
@@ -1710,7 +1719,7 @@ def room_intro(room_kind: str) -> None:
     objectives = "".join(f'<div class="objective">{html.escape(item)}</div>' for item in t["objectives"])
     st.markdown(
         f"""
-        <div class="game-card" style="{style_vars(room_kind)};background-image:url('app/static/game_art/{html.escape(t['art'])}');">
+        <div class="game-card" style="{style_vars(room_kind)};background-image:url('app/static/game_art/{html.escape(t['banner_art'])}');background-position:right center;">
           <div class="mission-kicker">
             <span class="room-index">Room {room_number:02d}</span>
             <span>{model_label}</span>

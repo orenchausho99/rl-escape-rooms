@@ -32,6 +32,11 @@ class ProjectRequirementTests(unittest.TestCase):
             "bomberman-reactor-thumbnail-v2.webp",
             "lunar-lander-thumbnail-v2.webp",
             "portal-hazard-thumbnail-v2.webp",
+            "pacman-ice-banner-v2.webp",
+            "sokoban-vault-banner-v2.webp",
+            "bomberman-reactor-banner-v2.webp",
+            "lunar-lander-banner-v2.webp",
+            "portal-hazard-banner-v2.webp",
         )
         self.assertTrue(all((art_dir / name).is_file() for name in names))
 
