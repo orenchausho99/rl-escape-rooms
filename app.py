@@ -62,6 +62,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "algorithm": "Dynamic Programming",
         "inspiration": "Inspired by Pac-Man",
         "art": "pacman-ice-arena.webp",
+        "thumbnail_art": "pacman-ice-thumbnail-v2.webp",
         "mission": "Reach EXIT quickly, avoid moving ghosts and cracks, and handle slippery ice. The complete transition model is known to Value Iteration.",
         "agent": "PAC",
         "goal": "EXIT",
@@ -84,6 +85,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "algorithm": "SARSA",
         "inspiration": "Inspired by Sokoban",
         "art": "sokoban-vault-arena.webp",
+        "thumbnail_art": "sokoban-vault-thumbnail-v2.webp",
         "mission": "Push the BOX onto the target tile, avoid lasers, then enter SAFE. SARSA learns from its actual exploratory moves.",
         "agent": "PUSH",
         "goal": "SAFE",
@@ -106,6 +108,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "algorithm": "Q-Learning",
         "inspiration": "Inspired by Bomberman",
         "art": "bomberman-reactor-arena.webp",
+        "thumbnail_art": "bomberman-reactor-thumbnail-v2.webp",
         "mission": "Collect two CORE items, avoid bomb blasts and patrol bots, use WARP tunnels, then escape through GATE.",
         "agent": "BOMB",
         "goal": "GATE",
@@ -128,6 +131,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "algorithm": "Approximate Q-Learning",
         "inspiration": "Inspired by Lunar Lander",
         "art": "lunar-lander-arena.webp",
+        "thumbnail_art": "lunar-lander-thumbnail-v2.webp",
         "mission": "Choose a discrete velocity every 0.02 seconds, avoid asteroid fields, and guide the lander across a continuous 10x10 meter room to PAD.",
         "agent": "LANDER",
         "goal": "PAD",
@@ -149,6 +153,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "algorithm": "Approximate Q-Learning",
         "inspiration": "Inspired by Portal",
         "art": "portal-arena.webp",
+        "thumbnail_art": "portal-hazard-thumbnail-v2.webp",
         "mission": "Avoid moving portal hazards and reach EXIT. The agent observes only the nearest portal within X meters in front of it.",
         "agent": "PORTAL",
         "goal": "EXIT",
@@ -1630,11 +1635,11 @@ def style_vars(room_kind: str) -> str:
 
 def thumbnail_markup(room_kind: str) -> str:
     thumbnails = {
-        "dp": '<span class="thumb-name">PAC-MAN</span><span class="mini-wall w1"></span><span class="mini-wall w2"></span><span class="mini-wall w3"></span><span class="mini-pellet p1"></span><span class="mini-pellet p2"></span><span class="mini-pellet p3"></span><span class="mini-pellet p4"></span><span class="mini-pac"></span><span class="mini-ghost"></span>',
-        "sarsa": '<span class="thumb-name">SOKOBAN</span><span class="mini-laser l1"></span><span class="mini-laser l2"></span><span class="mini-player"></span><span class="mini-crate"></span><span class="mini-target"></span>',
-        "q_learning": '<span class="thumb-name">BOMBERMAN</span><span class="mini-wall w1"></span><span class="mini-wall w2"></span><span class="mini-bomber"></span><span class="mini-bomb"></span><span class="mini-blast"></span>',
-        "approx": '<span class="thumb-name">LUNAR LANDER</span><span class="mini-lander"></span><span class="mini-meteor"></span><span class="mini-pad"></span><span class="mini-moon"></span>',
-        "obstacles": '<span class="thumb-name">PORTAL</span><span class="mini-portal portal-a"></span><span class="mini-portal purple portal-b"></span><span class="mini-route"></span><span class="mini-runner"></span>',
+        "dp": '<span class="thumb-name">ICE MAZE</span>',
+        "sarsa": '<span class="thumb-name">VAULT PUZZLE</span>',
+        "q_learning": '<span class="thumb-name">REACTOR BLAST</span>',
+        "approx": '<span class="thumb-name">LUNAR LANDING</span>',
+        "obstacles": '<span class="thumb-name">PORTAL RUN</span>',
     }
     return thumbnails[room_kind]
 
@@ -5150,7 +5155,7 @@ def render_room_selection() -> None:
                         <span class="room-number">Room {room_number:02d}</span>
                         <span class="room-status {status_class}">{status}</span>
                       </div>
-                      <div class="screen preview-{room_kind}" style="background-image:linear-gradient(180deg,rgba(2,6,23,.08),rgba(2,6,23,.62)),url('app/static/game_art/{html.escape(t['art'])}');background-size:cover;background-position:center;">
+                      <div class="screen preview-{room_kind}" style="background-image:linear-gradient(180deg,rgba(2,6,23,.03),rgba(2,6,23,.24)),url('app/static/game_art/{html.escape(t['thumbnail_art'])}');background-size:cover;background-position:center;">
                         {thumbnail_markup(room_kind)}
                       </div>
                       <h3>{html.escape(t["title"])}</h3>

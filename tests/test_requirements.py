@@ -24,6 +24,17 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertIn("app/static/game_art/", app_source)
         self.assertNotIn("/app/static/game_art/", app_source)
 
+    def test_room_selection_thumbnails_are_packaged(self):
+        art_dir = Path(__file__).parents[1] / "static" / "game_art"
+        names = (
+            "pacman-ice-thumbnail-v2.webp",
+            "sokoban-vault-thumbnail-v2.webp",
+            "bomberman-reactor-thumbnail-v2.webp",
+            "lunar-lander-thumbnail-v2.webp",
+            "portal-hazard-thumbnail-v2.webp",
+        )
+        self.assertTrue(all((art_dir / name).is_file() for name in names))
+
     def test_first_three_rooms_are_10_by_10(self):
         rooms = [
             GridEscapeRoom(room1_config()),
