@@ -29,13 +29,16 @@ The main purpose of the project was to experiment with:
 
 ## How to use the application
 
-1. Choose one of the five rooms from the main screen.
-2. Open `Play Game` to understand the room and play it with the keyboard.
-3. Open `Train Agent` and choose the training parameters.
-4. Start a normal training run or use `Optimize and train`.
-5. Open `Episode Replay` to watch any recorded episode.
-6. Open `Analytics` to see the learning graphs.
-7. Open `Room Specs` to see the state, actions, terminal condition, and rewards.
+1. Create a Player Profile or select `Continue as guest`.
+2. Use the Campaign Dashboard to continue the current campaign or choose one of the five rooms.
+3. Open `Play Game` to understand the room and play it with the keyboard.
+4. Open `Train Agent` and choose the training parameters.
+5. Start a normal training run or use `Optimize and train`.
+6. Open `Episode Replay` to watch any recorded episode.
+7. Open `Analytics` to see the learning graphs.
+8. Open `Room Specs` to see the state, actions, terminal condition, and rewards.
+
+The Player Profile is a session profile, not a password-based authentication system. It personalizes the dashboard without changing any environment, reward, state, or learning algorithm. Guest mode keeps the application immediately available during demonstrations.
 
 A room is marked as completed when the trained agent reaches at least a 60% success rate in its recent attempts. For the first room, all 12 policy rollouts are used.
 

@@ -25,6 +25,12 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertIn("app/static/game_art/", app_source)
         self.assertNotIn("/app/static/game_art/", app_source)
 
+    def test_player_profile_wraps_campaign_without_changing_room_order(self):
+        app_source = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
+        self.assertIn('"Continue as guest"', app_source)
+        self.assertIn("def render_campaign_dashboard", app_source)
+        self.assertIn('st.tabs(["Play Game", "Train Agent", "Episode Replay", "Analytics", "Room Specs"])', app_source)
+
     def test_room_selection_thumbnails_are_packaged(self):
         art_dir = Path(__file__).parents[1] / "static" / "game_art"
         names = (

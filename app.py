@@ -46,6 +46,13 @@ st.set_page_config(page_title="RL Escape Rooms", layout="wide", initial_sidebar_
 ROOM_ORDER = ["dp", "sarsa", "q_learning", "approx", "obstacles"]
 ACTION_LABELS = ("Up", "Right", "Down", "Left")
 
+PLAYER_ROLES: Dict[str, Dict[str, str]] = {
+    "Pathfinder": {"code": "PF", "description": "Plans routes and values efficient solutions."},
+    "Analyst": {"code": "AN", "description": "Focuses on metrics, comparison, and repeatable experiments."},
+    "Explorer": {"code": "EX", "description": "Favors discovery, testing, and broad state-space coverage."},
+    "Operator": {"code": "OP", "description": "Balances gameplay, training, replay, and analysis."},
+}
+
 TUNED_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "dp": {"gamma": 0.96, "slip": 0.25, "theta": 1e-4, "max_iterations": 1000, "max_steps": 220},
     "sarsa": {"episodes": 650, "max_steps": 250, "alpha": 0.15, "gamma": 0.96, "epsilon": 0.40, "epsilon_min": 0.03, "epsilon_decay": 0.993, "slip": 0.18},
@@ -315,6 +322,131 @@ def css() -> None:
             border-radius: 50%;
             background: var(--success);
             box-shadow: 0 0 9px rgba(74,222,128,.7);
+        }
+        .welcome-hero {
+            position: relative;
+            min-height: 390px;
+            display: flex;
+            align-items: flex-end;
+            box-sizing: border-box;
+            overflow: hidden;
+            border-top: 4px solid var(--signal);
+            border-bottom: 1px solid #404854;
+            border-radius: 8px;
+            padding: 42px;
+            margin: 4px 0 18px;
+            background: url('app/static/game_art/bomberman-reactor-banner-v2.webp') center / cover;
+            box-shadow: 0 24px 70px rgba(0,0,0,.42);
+        }
+        .welcome-hero::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: rgba(5,8,13,.72);
+        }
+        .welcome-copy {
+            position: relative;
+            z-index: 1;
+            width: min(700px, 72%);
+        }
+        .welcome-kicker,
+        .dashboard-kicker {
+            color: var(--signal);
+            font-size: .72rem;
+            font-weight: 950;
+            text-transform: uppercase;
+        }
+        .welcome-hero h1 {
+            margin: 8px 0 10px;
+            color: #ffffff;
+            font-size: 4.2rem;
+            line-height: .98;
+            font-weight: 950;
+        }
+        .welcome-hero p {
+            max-width: 640px;
+            margin: 0;
+            color: #d5dbe4;
+            font-size: 1.02rem;
+            line-height: 1.65;
+        }
+        .welcome-path {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 22px;
+        }
+        .welcome-path span {
+            border-left: 2px solid var(--signal);
+            background: rgba(9,13,19,.78);
+            padding: 8px 10px;
+            color: #f4f7fb;
+            font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+            font-size: .72rem;
+            font-weight: 850;
+        }
+        .profile-form-head {
+            border-top: 1px solid #3a424d;
+            padding: 18px 2px 8px;
+        }
+        .profile-form-head h2 {
+            margin: 5px 0 6px;
+            color: #ffffff;
+            font-size: 1.55rem;
+        }
+        .profile-form-head p {
+            margin: 0;
+            color: #aeb7c3;
+        }
+        .campaign-dashboard {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(430px, .9fr);
+            gap: 26px;
+            align-items: center;
+            border-top: 3px solid var(--signal);
+            border-bottom: 1px solid #3a424d;
+            background:
+                linear-gradient(90deg, rgba(11,15,21,.98), rgba(11,15,21,.84)),
+                url('app/static/game_art/portal-hazard-banner-v2.webp') right center / auto 100%;
+            padding: 24px 22px;
+            margin-bottom: 12px;
+        }
+        .campaign-dashboard h2 {
+            margin: 6px 0 7px;
+            color: #ffffff;
+            font-size: 1.8rem;
+            line-height: 1.1;
+        }
+        .campaign-dashboard p {
+            max-width: 690px;
+            margin: 0;
+            color: #aeb7c3;
+        }
+        .dashboard-stats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            border-left: 1px solid #424a55;
+        }
+        .dashboard-stat {
+            min-width: 0;
+            padding: 4px 14px;
+            border-right: 1px solid #424a55;
+        }
+        .dashboard-stat span {
+            display: block;
+            color: #939daa;
+            font-size: .65rem;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+        .dashboard-stat strong {
+            display: block;
+            overflow: hidden;
+            margin-top: 4px;
+            color: #ffffff;
+            font-size: 1.18rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         div[data-testid="stTabs"] {
             border: 1px solid var(--line);
@@ -748,6 +880,24 @@ def css() -> None:
         div.stButton > button:disabled *,
         button[data-testid="stBaseButton-secondary"]:disabled * {
             color: #69727e !important;
+        }
+        [data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_control"] {
+            border-color: #4a535f !important;
+            background: #171c24 !important;
+            color: #eef2f7 !important;
+        }
+        [data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_control"] * {
+            color: #eef2f7 !important;
+            opacity: 1 !important;
+        }
+        [data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"] {
+            border-color: var(--electric) !important;
+            background: #174d76 !important;
+            color: #ffffff !important;
+        }
+        [data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"] * {
+            color: #ffffff !important;
+            opacity: 1 !important;
         }
         .select-head {
             display: grid;
@@ -1545,6 +1695,27 @@ def css() -> None:
             }
         }
         @media (max-width: 760px) {
+            .welcome-hero {
+                min-height: 430px;
+                align-items: flex-end;
+                padding: 24px 18px;
+                background-position: 64% center;
+            }
+            .welcome-copy {
+                width: 100%;
+            }
+            .welcome-hero h1 {
+                font-size: 2.65rem;
+            }
+            .campaign-dashboard {
+                grid-template-columns: 1fr;
+                padding: 20px 16px;
+            }
+            .dashboard-stats {
+                border-left: 0;
+                border-top: 1px solid #424a55;
+                padding-top: 14px;
+            }
             .room-select-card {
                 height: auto;
                 min-height: 0;
@@ -1684,10 +1855,90 @@ def next_room_kind(room_kind: str) -> str | None:
     return ROOM_ORDER[index + 1] if index + 1 < len(ROOM_ORDER) else None
 
 
+def render_welcome() -> None:
+    st.markdown(
+        """
+        <div class="welcome-hero">
+          <div class="welcome-copy">
+            <div class="welcome-kicker">Reinforcement Learning Campaign</div>
+            <h1>RL Escape Lab</h1>
+            <p>Enter the training arcade, solve five different environments, and follow each agent from early exploration to a learned policy.</p>
+            <div class="welcome-path">
+              <span>PLAYER PROFILE</span><span>CAMPAIGN DASHBOARD</span><span>TRAIN</span><span>REPLAY</span><span>ANALYZE</span>
+            </div>
+          </div>
+        </div>
+        <div class="profile-form-head">
+          <div class="dashboard-kicker">Player Setup</div>
+          <h2>Create your session profile</h2>
+          <p>Choose a display name and training style, or enter immediately as a guest.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container(border=True):
+        name_col, role_col = st.columns([0.42, 0.58], vertical_alignment="bottom")
+        with name_col:
+            player_name = st.text_input(
+                "Player name",
+                max_chars=24,
+                placeholder="Enter your name",
+                help="This name is shown in the campaign dashboard for the current session.",
+            )
+        with role_col:
+            player_role = st.segmented_control(
+                "Training style",
+                options=list(PLAYER_ROLES),
+                default="Pathfinder",
+                selection_mode="single",
+                help="This choice personalizes the dashboard only and does not change the RL algorithms.",
+            )
+
+        start_col, guest_col = st.columns([0.68, 0.32])
+        with start_col:
+            start_profile = st.button(
+                "Start campaign",
+                type="primary",
+                use_container_width=True,
+                key="start_player_campaign",
+            )
+        with guest_col:
+            continue_guest = st.button(
+                "Continue as guest",
+                use_container_width=True,
+                key="continue_as_guest",
+            )
+
+    if start_profile:
+        clean_name = player_name.strip()
+        if not clean_name:
+            st.error("Enter a player name or continue as a guest.")
+            return
+        selected_role = player_role or "Pathfinder"
+        st.session_state["player_profile"] = {
+            "name": clean_name,
+            "role": selected_role,
+            "code": PLAYER_ROLES[selected_role]["code"],
+            "guest": False,
+        }
+        st.rerun()
+    elif continue_guest:
+        st.session_state["player_profile"] = {
+            "name": "Guest Agent",
+            "role": "Explorer",
+            "code": PLAYER_ROLES["Explorer"]["code"],
+            "guest": True,
+        }
+        st.rerun()
+
+
 def header(room_kind: str | None) -> None:
     completed = len(set(st.session_state.get("completed_rooms", [])))
     current_label = ROOM_THEMES[room_kind]["title"] if room_kind else "Room Select"
-    stage_label = "Mission active" if room_kind else "Campaign map"
+    profile = st.session_state.get("player_profile", {})
+    player_name = str(profile.get("name", "Guest Agent"))
+    player_code = str(profile.get("code", "EX"))
     st.markdown(
         f"""
         <div class="topbar">
@@ -1702,7 +1953,7 @@ def header(room_kind: str | None) -> None:
             <div class="topbar-badges">
               <span class="topbar-badge active">Current<strong>{html.escape(current_label)}</strong></span>
               <span class="topbar-badge">Campaign<strong>{completed} / {len(ROOM_ORDER)} cleared</strong></span>
-              <span class="topbar-badge">Session<strong><i class="status-live"></i>{stage_label}</strong></span>
+              <span class="topbar-badge">Player<strong><i class="status-live"></i>{html.escape(player_code)} · {html.escape(player_name)}</strong></span>
             </div>
           </div>
         </div>
@@ -5182,22 +5433,71 @@ def render_details_tab(room_kind: str) -> None:
 
 def choose_room(room_kind: str) -> None:
     st.session_state["selected_room"] = room_kind
+    st.session_state["last_room"] = room_kind
 
 
 def clear_room_selection() -> None:
     st.session_state.pop("selected_room", None)
 
 
+def render_campaign_dashboard() -> None:
+    profile = st.session_state.get("player_profile", {})
+    player_name = str(profile.get("name", "Guest Agent"))
+    player_role = str(profile.get("role", "Explorer"))
+    role_description = PLAYER_ROLES.get(player_role, PLAYER_ROLES["Explorer"])["description"]
+    completed = set(st.session_state.get("completed_rooms", []))
+    runs = st.session_state.get("runs_by_room", {})
+    success_rates = [run_success_rate(run) for run in runs.values()]
+    best_success = max(success_rates, default=0.0)
+    last_room = st.session_state.get("last_room")
+    first_incomplete = next((kind for kind in ROOM_ORDER if kind not in completed), ROOM_ORDER[-1])
+    continue_room = last_room if last_room in ROOM_ORDER else first_incomplete
+    continue_number = ROOM_ORDER.index(continue_room) + 1
+
+    st.markdown(
+        f"""
+        <div class="campaign-dashboard">
+          <div>
+            <div class="dashboard-kicker">Campaign Dashboard</div>
+            <h2>Welcome, {html.escape(player_name)}</h2>
+            <p><b>{html.escape(player_role)}</b> profile. {html.escape(role_description)} Continue the campaign or select any room below.</p>
+          </div>
+          <div class="dashboard-stats">
+            <div class="dashboard-stat"><span>Rooms cleared</span><strong>{len(completed)}/{len(ROOM_ORDER)}</strong></div>
+            <div class="dashboard-stat"><span>Training runs</span><strong>{len(runs)}</strong></div>
+            <div class="dashboard-stat"><span>Best success</span><strong>{best_success * 100:.0f}%</strong></div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    continue_col, profile_col = st.columns([0.76, 0.24])
+    with continue_col:
+        if st.button(
+            f"Continue to Room {continue_number:02d}: {ROOM_THEMES[continue_room]['title']}",
+            type="primary",
+            use_container_width=True,
+        ):
+            choose_room(continue_room)
+            st.rerun()
+    with profile_col:
+        if st.button("Edit player profile", use_container_width=True):
+            st.session_state.pop("player_profile", None)
+            st.rerun()
+
+
 def render_room_selection() -> None:
     completed = set(st.session_state.get("completed_rooms", []))
     completed_count = len(completed)
     progress_percent = completed_count / len(ROOM_ORDER) * 100
+    render_campaign_dashboard()
     st.markdown(
         f"""
         <div class="select-head">
           <div>
-            <div class="select-eyebrow">Campaign Control</div>
-            <h2>Select a training room</h2>
+            <div class="select-eyebrow">Training Environments</div>
+            <h2>Select a room</h2>
             <p>Choose an environment, enter the arena, and train the matching reinforcement-learning agent.</p>
           </div>
           <div class="campaign-score">
@@ -5310,6 +5610,9 @@ def render_room_app(room_kind: str) -> None:
 
 def main() -> None:
     css()
+    if not st.session_state.get("player_profile"):
+        render_welcome()
+        return
     room_kind = st.session_state.get("selected_room")
     header(room_kind)
     if not room_kind:
