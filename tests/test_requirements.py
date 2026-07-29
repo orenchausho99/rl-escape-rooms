@@ -93,6 +93,21 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertFalse(done)
         self.assertGreater(reward, 0)
 
+    def test_slippery_tiles_are_distributed_across_the_grid(self):
+        for config in (room1_config(), room2_config()):
+            slippery = config.slippery
+            self.assertGreaterEqual(len(slippery), 8)
+            self.assertLessEqual(min(row for row, _col in slippery), 2)
+            self.assertGreaterEqual(max(row for row, _col in slippery), 8)
+            self.assertLessEqual(min(col for _row, col in slippery), 1)
+            self.assertGreaterEqual(max(col for _row, col in slippery), 8)
+            self.assertFalse(slippery & config.walls)
+            self.assertNotIn(config.start, slippery)
+            self.assertNotIn(config.goal, slippery)
+            for row, col in slippery:
+                neighbors = {(row - 1, col), (row + 1, col), (row, col - 1), (row, col + 1)}
+                self.assertFalse(neighbors & slippery)
+
     def test_rewards_cannot_be_farmed_from_bonus_or_portal_loops(self):
         self.assertEqual(room1_config().bonuses, {})
         self.assertEqual(room2_config().bonuses, {})
