@@ -34,6 +34,16 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertNotIn("PLAYER_ROLES", app_source)
         self.assertIn('st.tabs(["Play Game", "Train Agent", "Episode Replay", "Analytics", "Room Specs"])', app_source)
 
+    def test_episode_count_is_configurable_only_for_learning_rooms(self):
+        app_source = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
+        self.assertIn("EPISODE_CONTROLS", app_source)
+        self.assertIn('"Episodes - training attempts"', app_source)
+        self.assertIn('episode_control = EPISODE_CONTROLS[room_kind]', app_source)
+        self.assertIn("Value Iteration uses model sweeps, not training episodes", app_source)
+        for room_kind in ("sarsa", "q_learning", "approx", "obstacles"):
+            self.assertIn(f'"{room_kind}": {{"min":', app_source)
+        self.assertNotIn('"dp": {"min":', app_source)
+
     def test_room_selection_thumbnails_are_packaged(self):
         art_dir = Path(__file__).parents[1] / "static" / "game_art"
         names = (
