@@ -141,7 +141,7 @@ The manual Pac-Man game uses a real-time chasing system to make the game more in
 
 ### Task
 
-The agent must push the box from `(0,8)` onto the target at `(0,9)`. After the box is locked on the target, the player must reach the safe at `(9,9)`.
+The agent must push the box from `(0,8)` onto the target at `(0,9)`. After the box is locked on the target, the player must time two moving laser patrols and reach the safe at `(9,9)`.
 
 ### Algorithm
 
@@ -156,10 +156,12 @@ Q(S,A) = Q(S,A) + alpha * [R + gamma*Q(S',A') - Q(S,A)]
 ### State
 
 ```text
-(player_row, player_col, box_row, box_col)
+(player_row, player_col, box_row, box_col, laser_phase)
 ```
 
-The box position is part of the actual state. The environment checks whether the box can be pushed into the next tile, so it is a real Sokoban task and not only a visual object.
+The box position is part of the actual state. The environment checks whether the box can be pushed into the next tile, so it is a real Sokoban task and not only a visual object. `laser_phase` identifies the current position of the two moving laser gates. This keeps the process Markovian: the agent can distinguish states that have the same player and box positions but different laser threats.
+
+The lasers move along deterministic patrol cycles. During training and replay they advance once after every agent action. In the manual game they move continuously so the room feels active even while the player is standing still. Contact gives a penalty and sends the player back to the start, while the box stays in its current position.
 
 ### Actions
 
@@ -169,7 +171,7 @@ UP, RIGHT, DOWN, LEFT
 
 ### Final state
 
-The box must be on `TARGET` and the player must be in `SAFE`.
+The box must be on `TARGET`, the player must be in `SAFE`, and `laser_phase` is canonicalized to `0`. This gives the room one canonical terminal state.
 
 ### Rewards
 
@@ -180,7 +182,7 @@ The box must be on `TARGET` and the player must be in `SAFE`.
 | Box leaves TARGET | `-28` |
 | Reach SAFE after solving the box | `+130` |
 | Invalid push or blocked move | `-6` additional penalty |
-| Laser tiles | `-30` or `-35` |
+| Hit a moving laser | `-38` and return the player to START |
 
 ### Parameters that worked well
 
@@ -195,7 +197,7 @@ epsilon_decay = 0.993
 slip_probability = 0.18
 ```
 
-In my verification, the final `50/50` episodes succeeded, with an average of about 18.96 steps.
+In my verification after adding the moving laser phase, the final `50/50` episodes succeeded, with an average of about 23.74 steps. The learned task is slightly harder because the agent must now time two moving hazards instead of avoiding fixed laser tiles.
 
 ## Room 3: Bomberman Reactor
 

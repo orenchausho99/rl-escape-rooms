@@ -35,6 +35,7 @@ class GridRoomConfig:
     keys: Tuple[GridPos, ...] = ()
     portals: Dict[GridPos, GridPos] = field(default_factory=dict)
     guard_cycles: Tuple[Tuple[GridPos, ...], ...] = ()
+    laser_cycles: Tuple[Tuple[GridPos, ...], ...] = ()
     box_start: Optional[GridPos] = None
     box_target: Optional[GridPos] = None
     slip_probability: float = 0.2
@@ -43,6 +44,7 @@ class GridRoomConfig:
     key_reward: float = 20.0
     blocked_goal_penalty: float = -6.0
     guard_reward: float = -55.0
+    laser_reward: float = -38.0
     portal_reward: float = 4.0
     seed: int = 7
 
@@ -298,13 +300,17 @@ def room2_config(slip_probability: float = 0.2, seed: int = 11) -> GridRoomConfi
                 (9, 8),
             }
         ),
-        traps={(4, 8): -30.0, (8, 4): -35.0},
+        laser_cycles=(
+            ((4, 7), (4, 8), (4, 9), (4, 8)),
+            ((8, 3), (8, 4), (8, 5), (8, 6), (8, 7), (8, 6), (8, 5), (8, 4)),
+        ),
         box_start=(0, 8),
         box_target=(0, 9),
         slip_probability=slip_probability,
         step_reward=-1.0,
         goal_reward=130.0,
         key_reward=28.0,
+        laser_reward=-38.0,
         seed=seed,
     )
 
@@ -353,8 +359,8 @@ def room3_config(slip_probability: float = 0.12, seed: int = 19) -> GridRoomConf
 class SokobanEscapeRoom(GridEscapeRoom):
     """Model-free 10x10 Sokoban room.
 
-    State is (player_row, player_col, box_row, box_col). The box must be on
-    box_target before the single SAFE terminal state can be entered.
+    State is (player_row, player_col, box_row, box_col, laser_phase). The box
+    must be on box_target before the single SAFE terminal state can be entered.
     """
 
     def __init__(self, config: GridRoomConfig):
@@ -362,6 +368,18 @@ class SokobanEscapeRoom(GridEscapeRoom):
             raise ValueError("Sokoban requires box_start and box_target")
         super().__init__(config)
         self.box_position = config.box_start
+        self.laser_phase = 0
+
+    @property
+    def laser_period(self) -> int:
+        period = 1
+        for cycle in self.config.laser_cycles:
+            period = math.lcm(period, len(cycle))
+        return period
+
+    def laser_positions(self, phase: Optional[int] = None) -> Tuple[GridPos, ...]:
+        current_phase = self.laser_phase if phase is None else phase
+        return tuple(cycle[current_phase % len(cycle)] for cycle in self.config.laser_cycles)
 
     def copy_with(self, *, seed: Optional[int] = None) -> "SokobanEscapeRoom":
         config = self.config if seed is None else replace(self.config, seed=seed)
@@ -370,14 +388,25 @@ class SokobanEscapeRoom(GridEscapeRoom):
     def reset(self) -> GridState:
         self.position = self.config.start
         self.box_position = self.config.box_start or (0, 0)
+        self.laser_phase = 0
         self.steps = 0
         return self.state()
 
     def state(self) -> GridState:
-        return (self.position[0], self.position[1], self.box_position[0], self.box_position[1])
+        return (
+            self.position[0],
+            self.position[1],
+            self.box_position[0],
+            self.box_position[1],
+            self.laser_phase,
+        )
 
     def is_terminal_state(self, state: GridState) -> bool:
-        return (state[0], state[1]) == self.config.goal and (state[2], state[3]) == self.config.box_target
+        return (
+            (state[0], state[1]) == self.config.goal
+            and (state[2], state[3]) == self.config.box_target
+            and state[4] == 0
+        )
 
     def step(self, action: int) -> Tuple[GridState, float, bool, Dict[str, object]]:
         outcomes = self._action_outcomes((self.position[0], self.position[1], 0, 0), action)
@@ -428,9 +457,24 @@ class SokobanEscapeRoom(GridEscapeRoom):
             reward += self.config.blocked_goal_penalty
         if done:
             reward += self.config.goal_reward
+            self.laser_phase = 0
+        else:
+            self.laser_phase = (self.laser_phase + 1) % self.laser_period
+
+        hit_laser = not done and self.position in self.laser_positions()
+        if hit_laser:
+            reward += self.config.laser_reward
+            self.position = self.config.start
 
         self.steps += 1
-        return self.state(), reward, done, {"pushed": pushed, "blocked": blocked, "box_locked": box_locked}
+        return self.state(), reward, done, {
+            "pushed": pushed,
+            "blocked": blocked,
+            "box_locked": box_locked,
+            "hit_laser": hit_laser,
+            "laser_phase": self.laser_phase,
+            "laser_positions": self.laser_positions(),
+        }
 
 
 CONTINUOUS_ACTIONS: Tuple[Tuple[int, int], ...] = (

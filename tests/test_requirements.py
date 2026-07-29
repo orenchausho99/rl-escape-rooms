@@ -92,17 +92,35 @@ class ProjectRequirementTests(unittest.TestCase):
         for _ in range(7):
             room.step(1)
         state, reward, done, info = room.step(1)
-        self.assertEqual(state, (0, 8, 0, 9))
+        self.assertEqual(state, (0, 8, 0, 9, 0))
         self.assertTrue(info["pushed"])
         self.assertTrue(info["box_locked"])
         self.assertFalse(done)
         self.assertGreater(reward, 0)
 
+    def test_sokoban_lasers_move_and_are_part_of_the_state(self):
+        room = SokobanEscapeRoom(room2_config(slip_probability=0.0))
+        self.assertEqual(len(room.state()), 5)
+        self.assertEqual(room.laser_positions(), ((4, 7), (8, 3)))
+        state, _, _, info = room.step(0)
+        self.assertEqual(state[4], 1)
+        self.assertEqual(info["laser_positions"], ((4, 8), (8, 4)))
+
+        room.position = (4, 7)
+        room.laser_phase = 3
+        state, reward, done, info = room.step(3)
+        self.assertTrue(info["hit_laser"])
+        self.assertEqual(state[:2], room.config.start)
+        self.assertFalse(done)
+        self.assertLess(reward, room.config.step_reward)
+
     def test_sokoban_lasers_use_animated_gate_visuals(self):
         app_source = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
         self.assertIn("function drawVaultLaserGate", app_source)
         self.assertIn("LASER GRID ARMED", app_source)
-        self.assertIn("Security laser triggered", app_source)
+        self.assertIn("function advanceLiveLasers", app_source)
+        self.assertIn("moving security laser caught", app_source)
+        self.assertIn("for (const cycle of cfg.laserCycles || [])", app_source)
 
     def test_slippery_tiles_are_distributed_across_the_grid(self):
         for config in (room1_config(), room2_config()):
@@ -130,6 +148,10 @@ class ProjectRequirementTests(unittest.TestCase):
             room = GridEscapeRoom(config)
             terminals = [state for state in room.all_states() if room.is_terminal_state(state)]
             self.assertEqual(len(terminals), 1)
+        sokoban = SokobanEscapeRoom(room2_config())
+        canonical = (*sokoban.config.goal, *sokoban.config.box_target, 0)
+        self.assertTrue(sokoban.is_terminal_state(canonical))
+        self.assertFalse(sokoban.is_terminal_state((*canonical[:4], 1)))
 
     def test_continuous_room_matches_required_dynamics(self):
         config = continuous_room_config()

@@ -89,16 +89,16 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
     "sarsa": {
         "menu": "2. Sokoban Vault",
         "title": "Sokoban Vault",
-        "subtitle": "Classic crate-pushing puzzle with SARSA",
+        "subtitle": "Crate-pushing puzzle with moving laser security",
         "algorithm": "SARSA",
         "inspiration": "Inspired by Sokoban",
         "art": "sokoban-vault-arena.webp",
         "thumbnail_art": "sokoban-vault-thumbnail-v2.webp",
         "banner_art": "sokoban-vault-banner-v2.webp",
-        "mission": "Push the BOX onto the target tile, avoid lasers, then enter SAFE. SARSA learns from its actual exploratory moves.",
+        "mission": "Push the BOX onto the target tile, time the moving lasers, then enter SAFE. SARSA learns from its actual exploratory moves.",
         "agent": "PUSH",
         "goal": "SAFE",
-        "state": "(player_row, player_col, box_row, box_col)",
+        "state": "(player_row, player_col, box_row, box_col, laser_phase)",
         "accent": "#a78bfa",
         "agent_color": "#facc15",
         "wall": "#312e81",
@@ -2216,6 +2216,7 @@ def arcade_payload(room_kind: str, replay_attempt: Dict[str, Any] | None = None)
                 "keys": [list(pos) for pos in env.config.keys],
                 "portals": [{"from": list(k), "to": list(v)} for k, v in env.config.portals.items()],
                 "guardCycles": [[list(pos) for pos in cycle] for cycle in env.config.guard_cycles],
+                "laserCycles": [[list(pos) for pos in cycle] for cycle in env.config.laser_cycles],
                 "boxStart": list(env.config.box_start) if env.config.box_start is not None else None,
                 "boxTarget": list(env.config.box_target) if env.config.box_target is not None else None,
                 "slipProbability": env.config.slip_probability,
@@ -2224,6 +2225,7 @@ def arcade_payload(room_kind: str, replay_attempt: Dict[str, Any] | None = None)
                 "keyReward": env.config.key_reward,
                 "blockedGoalPenalty": env.config.blocked_goal_penalty,
                 "guardReward": env.config.guard_reward,
+                "laserReward": env.config.laser_reward,
                 "portalReward": env.config.portal_reward,
                 "trapRewards": {f"{pos[0]},{pos[1]}": reward for pos, reward in env.config.traps.items()},
                 "labels": theme.get("labels", {}),
@@ -3016,12 +3018,18 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           anim: 0,
           lastEnemyTick: 0,
           lastGhostTick: 0,
+          lastLaserTick: 0,
           ghostMoveStarted: 0,
+          laserMoveStarted: 0,
           ghostTick: 0,
           ghosts: [],
+          lasers: [],
           ghostVisualFrom: [],
           ghostVisualTo: [],
+          laserVisualFrom: [],
+          laserVisualTo: [],
           enemyHitCooldown: 0,
+          laserHitCooldown: 0,
           playerMoved: false,
           visualFrom: cfg.start.slice(),
           visualTo: cfg.start.slice(),
@@ -3042,6 +3050,11 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         grid.portals = new Map((cfg.portals || []).map(p => [keyOf(p.from), p.to]));
         grid.targets = cfg.boxTarget ? [cfg.boxTarget] : (cfg.keys || []);
         grid.boxes = cfg.kind === 'sarsa' && cfg.boxStart ? [cfg.boxStart.slice()] : [];
+        if (cfg.kind === 'sarsa' && cfg.laserCycles) {
+          grid.lasers = cfg.laserCycles.map(cycle => cycle[0].slice());
+          grid.laserVisualFrom = grid.lasers.map(position => position.slice());
+          grid.laserVisualTo = grid.lasers.map(position => position.slice());
+        }
         if (cfg.kind === 'dp' && cfg.guardCycles) {
           grid.ghosts = cfg.guardCycles.map(cycle => cycle[0].slice());
           grid.ghostVisualFrom = grid.ghosts.map(position => position.slice());
@@ -3069,6 +3082,13 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           return grid.ghosts;
         }
         return cfg.guardCycles.map(cycle => cycle[grid.phase % cycle.length]);
+      }
+      function laserPositions() {
+        if (!cfg.laserCycles) return [];
+        if (cfg.kind === 'sarsa' && !cfg.replay && grid.lasers.length) {
+          return grid.lasers;
+        }
+        return cfg.laserCycles.map(cycle => cycle[grid.phase % cycle.length]);
       }
       function insideGrid(row, col) {
         return row >= 0 && row < cfg.rows && col >= 0 && col < cfg.cols;
@@ -3158,6 +3178,40 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         grid.score += cfg.stepReward * .25;
         enemyCollision();
       }
+      function laserCollision() {
+        if (cfg.kind !== 'sarsa' || cfg.replay) return false;
+        if (grid.anim < grid.laserHitCooldown) return false;
+        const hit = laserPositions().some(laser => keyOf(laser) === keyOf(grid.pos));
+        if (!hit) return false;
+        const caughtAt = grid.pos.slice();
+        const hitCenter = cellCenter(caughtAt);
+        emitBurst(hitCenter.x, hitCenter.y, '#fb7185', 34);
+        grid.score += cfg.laserReward;
+        grid.hits += 1;
+        grid.pos = cfg.start.slice();
+        animateGridMove(caughtAt, grid.pos);
+        grid.laserHitCooldown = grid.anim + 900;
+        grid.message = 'A moving security laser caught PUSH. Back to start.';
+        screenEffect('hit');
+        return true;
+      }
+      function advanceLiveLasers(now) {
+        if (cfg.kind !== 'sarsa' || cfg.replay || !grid.lasers.length) return;
+        if (!grid.lastLaserTick) grid.lastLaserTick = now;
+        if (now - grid.lastLaserTick < 620) {
+          laserCollision();
+          return;
+        }
+        grid.lastLaserTick = now;
+        const from = grid.lasers.map(position => position.slice());
+        grid.phase += 1;
+        const next = cfg.laserCycles.map(cycle => cycle[grid.phase % cycle.length].slice());
+        grid.laserVisualFrom = from;
+        grid.laserVisualTo = next.map(position => position.slice());
+        grid.laserMoveStarted = now;
+        grid.lasers = next;
+        laserCollision();
+      }
       function enemyCollision() {
         if (cfg.kind !== 'dp') return false;
         if (grid.anim < grid.enemyHitCooldown) return false;
@@ -3183,6 +3237,11 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         if (cfg.kind === 'dp' && !cfg.replay) {
           advanceLiveGhosts(grid.anim);
           root.dataset.ghostPhase = String(grid.phase);
+          return;
+        }
+        if (cfg.kind === 'sarsa' && !cfg.replay) {
+          advanceLiveLasers(grid.anim);
+          root.dataset.laserPhase = String(grid.phase);
           return;
         }
         if (grid.lastEnemyTick === 0) grid.lastEnemyTick = grid.anim;
@@ -3229,14 +3288,6 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         }
         const here = keyOf(grid.pos);
         grid.visited.add(here);
-        if (grid.traps.has(here)) {
-          grid.score += cfg.trapRewards[here] || 0;
-          grid.hits += 1;
-          const laserCenter = cellCenter(grid.pos);
-          emitBurst(laserCenter.x, laserCenter.y, '#fb7185', 34);
-          grid.message = 'Security laser triggered. Find a safer crate route.';
-          screenEffect('hit');
-        }
         if (grid.bonusesSet.has(here) && !grid.bonuses.has(here)) {
           grid.bonuses.add(here);
           grid.score += 18;
@@ -3264,6 +3315,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           }
         }
         animateGridMove(oldPos, grid.pos);
+        laserCollision();
         draw();
       }
       function moveGrid(action) {
@@ -3382,6 +3434,22 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         const eased = raw * raw * (3 - 2 * raw);
         const from = grid.ghostVisualFrom[index];
         const to = grid.ghostVisualTo[index];
+        const row = from[0] + (to[0] - from[0]) * eased;
+        const col = from[1] + (to[1] - from[1]) * eased;
+        return {
+          x: gridLayout.bx + col * gridLayout.cell + gridLayout.cell / 2,
+          y: gridLayout.by + row * gridLayout.cell + gridLayout.cell / 2
+        };
+      }
+      function visualLaserCenter(index, fallback) {
+        if (cfg.replay || !grid.laserVisualFrom[index] || !grid.laserVisualTo[index]) {
+          return cellCenter(fallback);
+        }
+        const elapsed = performance.now() - grid.laserMoveStarted;
+        const raw = clamp(elapsed / 420, 0, 1);
+        const eased = raw * raw * (3 - 2 * raw);
+        const from = grid.laserVisualFrom[index];
+        const to = grid.laserVisualTo[index];
         const row = from[0] + (to[0] - from[0]) * eased;
         const col = from[1] + (to[1] - from[1]) * eased;
         return {
@@ -3697,10 +3765,27 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
               ctx.fillStyle = 'rgba(168,85,247,.42)'; ctx.fill();
               writeLabel('OIL', x+cell/2, y+cell/2+4, 10, '#e9d5ff');
             }
-            if (grid.traps.has(k)) {
-              drawVaultLaserGate(x, y, cell, r, c);
-            }
           }
+        }
+        ctx.save();
+        ctx.setLineDash([5, 7]);
+        ctx.strokeStyle = 'rgba(251,113,133,.38)';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#fb7185';
+        ctx.shadowBlur = 6;
+        for (const cycle of cfg.laserCycles || []) {
+          ctx.beginPath();
+          cycle.forEach((position, index) => {
+            const center = cellCenter(position);
+            if (index === 0) ctx.moveTo(center.x, center.y);
+            else ctx.lineTo(center.x, center.y);
+          });
+          ctx.stroke();
+        }
+        ctx.restore();
+        for (const [index, laser] of laserPositions().entries()) {
+          const center = visualLaserCenter(index, laser);
+          drawVaultLaserGate(center.x - cell / 2, center.y - cell / 2, cell, laser[0], laser[1]);
         }
         for (const target of grid.targets || []) {
           const r = cellRect(target), cx = r.x + r.s / 2, cy = r.y + r.s / 2;
@@ -4447,7 +4532,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           grid.visualFrom = grid.pos.slice();
           grid.visualTo = grid.pos.slice();
           grid.moveStarted = performance.now();
-          grid.phase = cfg.kind === 'sarsa' ? 0 : (state[3] || 0);
+          grid.phase = cfg.kind === 'sarsa' ? (state[4] || 0) : (state[3] || 0);
           grid.score = score;
           grid.steps = replayIndex;
           grid.won = atEnd && cfg.replay.success;
@@ -5463,6 +5548,7 @@ def render_details_tab(room_kind: str) -> None:
             "box_target": env.config.box_target,
             "portals": {str(source): target for source, target in env.config.portals.items()},
             "guard_cycles": [[list(position) for position in cycle] for cycle in env.config.guard_cycles],
+            "laser_cycles": [[list(position) for position in cycle] for cycle in env.config.laser_cycles],
         }
         environment_rows = [
             ("Representation", representation),
@@ -5475,7 +5561,10 @@ def render_details_tab(room_kind: str) -> None:
             ("Every action", env.config.step_reward),
             ("Reach final state", env.config.goal_reward),
             ("Collect required item", env.config.key_reward),
-            ("Hit moving guard", env.config.guard_reward),
+            (
+                "Hit moving laser" if room_kind == "sarsa" else "Hit moving guard",
+                env.config.laser_reward if room_kind == "sarsa" else env.config.guard_reward,
+            ),
             ("Use portal", env.config.portal_reward),
         ]
     else:
