@@ -2788,10 +2788,10 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
               <div></div><input id="replayTimeline" type="range" min="0" value="0"><div></div>
             </div>
             <div class="replay-speed">
-              <button data-speed="900">0.5x</button>
-              <button data-speed="450" class="active">1x</button>
-              <button data-speed="220">2x</button>
-              <button data-speed="90">4x</button>
+              <button data-speed="0.5">0.5x</button>
+              <button data-speed="1" class="active">1x</button>
+              <button data-speed="2">2x</button>
+              <button data-speed="4">4x</button>
             </div>
           </div>
           <div class="action-row">
@@ -4337,7 +4337,8 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       }
       let replayIndex = 0;
       let replayPlaying = false;
-      let replayDelay = 450;
+      let replaySpeed = 1;
+      const replayBaseDelay = cfg.mode === 'continuous' ? 20 : 450;
       let replayLastTick = 0;
       let replayDecorLast = 0;
       function applyReplayFrame(index) {
@@ -4377,7 +4378,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           cont.path = cfg.replay.states.slice(0, replayIndex + 1).map(s => [s[0], s[1]]);
           cont.message = atEnd
             ? (cfg.replay.success ? 'Episode finished successfully.' : 'Episode ended before the goal.')
-            : 'Replaying the agent path.';
+            : 'Replaying the agent path. Step ' + replayIndex + ' of ' + (cfg.replay.states.length - 1) + '.';
         }
         const timeline = root.querySelector('#replayTimeline');
         if (timeline) timeline.value = replayIndex;
@@ -4386,15 +4387,18 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       }
       function stepReplay(now) {
         if (!cfg.replay || !replayPlaying) return;
-        if (!replayLastTick) replayLastTick = now;
-        if (now - replayLastTick < replayDelay) return;
-        replayLastTick = now;
+        if (!replayLastTick) { replayLastTick = now; return; }
+        const stepDelay = replayBaseDelay / replaySpeed;
+        const elapsed = now - replayLastTick;
+        if (elapsed < stepDelay) return;
+        const frameAdvance = Math.max(1, Math.floor(elapsed / stepDelay));
+        replayLastTick += frameAdvance * stepDelay;
         if (replayIndex >= cfg.replay.states.length - 1) {
           replayPlaying = false;
           applyReplayFrame(replayIndex);
           return;
         }
-        applyReplayFrame(replayIndex + 1);
+        applyReplayFrame(Math.min(cfg.replay.states.length - 1, replayIndex + frameAdvance));
       }
       function updateReplayDecor(now) {
         if (!cont) return;
@@ -4483,7 +4487,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           applyReplayFrame(replayIndex + 1);
         });
         root.querySelectorAll('[data-speed]').forEach(btn => btn.addEventListener('click', () => {
-          replayDelay = Number(btn.dataset.speed);
+          replaySpeed = Number(btn.dataset.speed);
           root.querySelectorAll('[data-speed]').forEach(item => item.classList.remove('active'));
           btn.classList.add('active');
           replayPlaying = true;

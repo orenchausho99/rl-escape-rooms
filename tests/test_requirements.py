@@ -178,6 +178,12 @@ class ProjectRequirementTests(unittest.TestCase):
             [3, 2],
         )
 
+    def test_continuous_replay_uses_environment_time_step(self):
+        app_source = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
+        self.assertIn("const replayBaseDelay = cfg.mode === 'continuous' ? 20 : 450", app_source)
+        self.assertIn("replayIndex + frameAdvance", app_source)
+        self.assertIn("Step ' + replayIndex + ' of '", app_source)
+
     def test_fast_tuning_skips_replay_recording_and_reports_progress(self):
         room = DynamicObstacleRoom(obstacle_room_config(seed=12, obstacle_count=3))
         progress = []
