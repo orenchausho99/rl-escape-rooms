@@ -1627,7 +1627,14 @@ def css() -> None:
             border-radius: 6px;
             border: 1px solid #3d4652;
             background: #151a21;
-            color: #eef2f7;
+            color: #eef2f7 !important;
+        }
+        [data-testid="stAlert"] [data-testid="stMarkdownContainer"],
+        [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p,
+        [data-testid="stAlert"] [data-testid="stMarkdownContainer"] span {
+            color: #eef2f7 !important;
+            -webkit-text-fill-color: #eef2f7 !important;
+            opacity: 1 !important;
         }
         [data-testid="stDataFrame"],
         [data-testid="stVegaLiteChart"] {

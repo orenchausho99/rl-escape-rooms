@@ -34,6 +34,11 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertNotIn("PLAYER_ROLES", app_source)
         self.assertIn('st.tabs(["Play Game", "Train Agent", "Episode Replay", "Analytics", "Room Specs"])', app_source)
 
+    def test_training_status_messages_keep_readable_contrast(self):
+        app_source = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
+        self.assertIn('[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p', app_source)
+        self.assertIn("-webkit-text-fill-color: #eef2f7 !important", app_source)
+
     def test_episode_count_is_configurable_only_for_learning_rooms(self):
         app_source = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
         self.assertIn("EPISODE_CONTROLS", app_source)
