@@ -286,6 +286,18 @@ delta = R + gamma*max_a Q(S',a) - Q(S,A)
 
 בממשק, `Episodes - training attempts` מופיע רק בחדרים 2–5, משום שאלו אלגוריתמים שלומדים מניסיונות. בחדר 1 אין Episodes של למידה: שולטים במקום זאת ב-`Max value-iteration sweeps` וב-`theta`. מגבלת הצעדים בחדר 1 משמשת רק להרצות הערכת המדיניות שנשמרות ב-Replay לאחר ההתכנסות.
 
+### ערכי ברירת המחדל בכל חדר
+
+| חדר | הפרמטרים המומלצים |
+|---|---|
+| 1 - Dynamic Programming | `seed=7`, `gamma=0.96`, `slip=0.25`, `theta=0.0001`, `max sweeps=1000`, `rollout steps=220` |
+| 2 - SARSA | `seed=7`, `episodes=650`, `max steps=250`, `alpha=0.15`, `gamma=0.96`, `epsilon=0.40`, `epsilon min=0.03`, `epsilon decay=0.993`, `slip=0.18` |
+| 3 - Q-Learning | `seed=7`, `episodes=650`, `max steps=850`, `alpha=0.15`, `gamma=0.96`, `epsilon=0.40`, `epsilon min=0.03`, `epsilon decay=0.993`, `slip=0.18` |
+| 4 - Approximate Q-Learning | `seed=7`, `episodes=450`, `max steps=850`, `alpha=0.08`, `gamma=0.985`, `epsilon=0.40`, `epsilon min=0.03`, `epsilon decay=0.993` |
+| 5 - Dynamic obstacles | `seed=7`, `episodes=450`, `max steps=1400`, `alpha=0.08`, `gamma=0.985`, `epsilon=0.40`, `epsilon min=0.03`, `epsilon decay=0.993`, `portals=7`, `observation=3m` |
+
+בחדרים 4–5 משתמשים ב-`alpha` נמוך יותר כדי לעדכן את משקלי פונקציית הקירוב בצורה יציבה. `gamma` גבוה יותר משום שהיעד עשוי להיות רחוק במספר רב של צעדי זמן קצרים. בחדר 5 נדרשת מגבלת צעדים גבוהה יותר בגלל המכשולים הדינמיים, הטלפורטים והתצפית החלקית.
+
 ## 11. אופטימיזציית הפרמטרים
 
 הכפתור `Optimize and train` בודק ארבעה מועמדים. לכל מועמד מתבצע אימון קצר, ולאחר מכן מחושב ציון:

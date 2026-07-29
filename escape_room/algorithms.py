@@ -86,6 +86,7 @@ def value_iteration(
     gamma: float = 0.96,
     theta: float = 1e-4,
     max_iterations: int = 1000,
+    rollout_max_steps: int = 220,
 ) -> Dict[str, object]:
     states = env.all_states()
     values: Dict[GridState, float] = {state: 0.0 for state in states}
@@ -133,7 +134,7 @@ def value_iteration(
         attempt_trajectory = run_grid_policy(
             env.copy_with(seed=env.config.seed + 76 + attempt_number),
             policy=policy,
-            max_steps=220,
+            max_steps=rollout_max_steps,
             seed=env.config.seed + attempt_number,
         )
         attempts.append(

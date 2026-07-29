@@ -4596,7 +4596,13 @@ def run_training(
     gamma = params["gamma"]
     if room_kind == "dp":
         env = GridEscapeRoom(room1_config(slip_probability=params["slip"], seed=seed))
-        result = value_iteration(env, gamma=gamma, theta=params["theta"], max_iterations=params["max_iterations"])
+        result = value_iteration(
+            env,
+            gamma=gamma,
+            theta=params["theta"],
+            max_iterations=params["max_iterations"],
+            rollout_max_steps=params["max_steps"],
+        )
     elif room_kind == "sarsa":
         env = SokobanEscapeRoom(room2_config(slip_probability=params["slip"], seed=seed))
         result = train_sarsa(env, episodes=params["episodes"], max_steps=params["max_steps"], alpha=params["alpha"], gamma=gamma, epsilon=params["epsilon"], epsilon_min=params["epsilon_min"], epsilon_decay=params["epsilon_decay"], seed=seed)
@@ -4773,7 +4779,7 @@ def render_train_tab(room_kind: str) -> None:
                 "Max steps per policy rollout" if room_kind == "dp" else "Max steps per episode",
                 80 if room_kind in {"dp", "sarsa", "q_learning"} else 200,
                 1600,
-                250 if room_kind in {"dp", "sarsa"} else (1400 if room_kind == "obstacles" else 850),
+                220 if room_kind == "dp" else (250 if room_kind == "sarsa" else (1400 if room_kind == "obstacles" else 850)),
                 10 if room_kind in {"dp", "sarsa", "q_learning"} else 50,
                 help=(
                     "Maximum number of actions in each policy evaluation rollout. This does not control Value Iteration."

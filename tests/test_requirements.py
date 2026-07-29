@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from escape_room.algorithms import train_approx_q_learning
+from escape_room.algorithms import train_approx_q_learning, value_iteration
 from escape_room.envs import (
     CONTINUOUS_ACTIONS,
     ContinuousEscapeRoom,
@@ -74,6 +74,12 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertGreater(len(room.config.guard_cycles), 0)
         outcomes = room.transition_model(room.reset(), 1)
         self.assertAlmostEqual(sum(item[0] for item in outcomes), 1.0)
+
+    def test_dp_rollout_step_limit_is_configurable(self):
+        room = GridEscapeRoom(room1_config())
+        result = value_iteration(room, max_iterations=1, rollout_max_steps=3)
+        self.assertEqual(len(result["attempts"]), 12)
+        self.assertTrue(all(attempt["steps"] <= 3 for attempt in result["attempts"]))
 
     def test_sarsa_room_is_real_sokoban_and_has_slip(self):
         room = SokobanEscapeRoom(room2_config(slip_probability=0.0))
