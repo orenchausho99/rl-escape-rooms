@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 import random
-from typing import DefaultDict, Dict, Iterable, List, MutableMapping, Optional, Sequence, Tuple
+from typing import Callable, DefaultDict, Dict, Iterable, List, MutableMapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -414,21 +414,31 @@ class LinearApproxQ:
         features = self.features(state)
         return sum(self.weights[action][name] * value for name, value in features.items())
 
-    def q_values(self, state: np.ndarray) -> np.ndarray:
-        features = self.features(state)
+    def q_values_from_features(self, features: Dict[str, float]) -> np.ndarray:
         return np.array(
             [sum(weights[name] * value for name, value in features.items()) for weights in self.weights],
             dtype=float,
         )
 
-    def update(self, state: np.ndarray, action: int, target: float, alpha: float) -> float:
-        features = self.features(state)
+    def q_values(self, state: np.ndarray) -> np.ndarray:
+        return self.q_values_from_features(self.features(state))
+
+    def update_from_features(
+        self,
+        features: Dict[str, float],
+        action: int,
+        target: float,
+        alpha: float,
+    ) -> float:
         prediction = sum(self.weights[action][name] * value for name, value in features.items())
         td_error = target - prediction
         scale = max(1.0, sum(abs(value) for value in features.values()))
         for name, value in features.items():
             self.weights[action][name] += alpha * td_error * value / scale
         return td_error
+
+    def update(self, state: np.ndarray, action: int, target: float, alpha: float) -> float:
+        return self.update_from_features(self.features(state), action, target, alpha)
 
 
 def run_continuous_policy(
@@ -495,6 +505,8 @@ def train_approx_q_learning(
     epsilon_min: float = 0.04,
     epsilon_decay: float = 0.993,
     seed: int = 13,
+    record_replay: bool = True,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> Dict[str, object]:
     rng = random.Random(seed)
     agent = LinearApproxQ(
@@ -505,28 +517,33 @@ def train_approx_q_learning(
     metrics: List[Dict[str, object]] = []
     snapshots: List[Dict[str, object]] = []
     attempts: List[Dict[str, object]] = []
-    snapshot_points = _snapshot_episodes(episodes)
+    snapshot_points = _snapshot_episodes(episodes) if record_replay else set()
+    progress_interval = max(1, episodes // 100)
 
     for episode in range(1, episodes + 1):
         state = env.reset()
+        state_features = agent.features(state)
         total_reward = 0.0
         done = False
         td_errors: List[float] = []
-        attempt_states: List[object] = [state.copy()]
-        attempt_actions = [-1]
-        attempt_rewards = [0.0]
-        attempt_obstacles = [_obstacle_snapshot(env)]
+        attempt_states: List[object] = [state.copy()] if record_replay else []
+        attempt_actions = [-1] if record_replay else []
+        attempt_rewards = [0.0] if record_replay else []
+        attempt_obstacles = [_obstacle_snapshot(env)] if record_replay else []
 
         for step in range(1, max_steps + 1):
-            action = epsilon_greedy(agent.q_values(state), epsilon, rng)
+            action = epsilon_greedy(agent.q_values_from_features(state_features), epsilon, rng)
             next_state, reward, done, _info = env.step(action)
-            attempt_states.append(next_state.copy())
-            attempt_actions.append(action)
-            attempt_rewards.append(reward)
-            attempt_obstacles.append(_obstacle_snapshot(env))
-            target = reward + gamma * float(np.max(agent.q_values(next_state))) * (not done)
-            td_errors.append(agent.update(state, action, target, alpha))
+            next_features = agent.features(next_state)
+            if record_replay:
+                attempt_states.append(next_state.copy())
+                attempt_actions.append(action)
+                attempt_rewards.append(reward)
+                attempt_obstacles.append(_obstacle_snapshot(env))
+            target = reward + gamma * float(np.max(agent.q_values_from_features(next_features))) * (not done)
+            td_errors.append(agent.update_from_features(state_features, action, target, alpha))
             state = next_state
+            state_features = next_features
             total_reward += reward
             if done:
                 break
@@ -541,17 +558,18 @@ def train_approx_q_learning(
                 "mean_abs_td_error": float(np.mean(np.abs(td_errors))) if td_errors else 0.0,
             }
         )
-        attempts.append(
-            _compact_attempt(
-                episode,
-                attempt_states,
-                attempt_actions,
-                attempt_rewards,
-                success=done,
-                epsilon=epsilon,
-                obstacles=attempt_obstacles,
+        if record_replay:
+            attempts.append(
+                _compact_attempt(
+                    episode,
+                    attempt_states,
+                    attempt_actions,
+                    attempt_rewards,
+                    success=done,
+                    epsilon=epsilon,
+                    obstacles=attempt_obstacles,
+                )
             )
-        )
         if episode in snapshot_points:
             eval_env = env.copy_with(seed=seed + episode + 7000)
             trajectory = run_continuous_policy(eval_env, agent, max_steps=max_steps, seed=seed + episode)
@@ -565,5 +583,7 @@ def train_approx_q_learning(
                 }
             )
         epsilon = max(epsilon_min, epsilon * epsilon_decay)
+        if progress_callback and (episode == 1 or episode == episodes or episode % progress_interval == 0):
+            progress_callback(episode, episodes)
 
     return {"agent": agent, "metrics": metrics, "snapshots": snapshots, "attempts": attempts}

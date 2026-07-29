@@ -5,7 +5,7 @@ import html
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 import matplotlib
 
@@ -4330,7 +4330,13 @@ def render_play_tab(room_kind: str) -> None:
     arcade_component(room_kind)
 
 
-def run_training(room_kind: str, params: Dict[str, Any]) -> Dict[str, Any]:
+def run_training(
+    room_kind: str,
+    params: Dict[str, Any],
+    *,
+    record_replay: bool = True,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> Dict[str, Any]:
     seed = int(params["seed"])
     gamma = params["gamma"]
     if room_kind == "dp":
@@ -4344,14 +4350,18 @@ def run_training(room_kind: str, params: Dict[str, Any]) -> Dict[str, Any]:
         result = train_q_learning(env, episodes=params["episodes"], max_steps=params["max_steps"], alpha=params["alpha"], gamma=gamma, epsilon=params["epsilon"], epsilon_min=params["epsilon_min"], epsilon_decay=params["epsilon_decay"], seed=seed)
     elif room_kind == "approx":
         env = ContinuousEscapeRoom(continuous_room_config(seed=seed))
-        result = train_approx_q_learning(env, episodes=params["episodes"], max_steps=params["max_steps"], alpha=params["alpha"], gamma=gamma, epsilon=params["epsilon"], epsilon_min=params["epsilon_min"], epsilon_decay=params["epsilon_decay"], seed=seed)
+        result = train_approx_q_learning(env, episodes=params["episodes"], max_steps=params["max_steps"], alpha=params["alpha"], gamma=gamma, epsilon=params["epsilon"], epsilon_min=params["epsilon_min"], epsilon_decay=params["epsilon_decay"], seed=seed, record_replay=record_replay, progress_callback=progress_callback)
     else:
         env = DynamicObstacleRoom(obstacle_room_config(seed=seed, obstacle_count=params["obstacle_count"], observation_range=params["observation_range"]))
-        result = train_approx_q_learning(env, episodes=params["episodes"], max_steps=params["max_steps"], alpha=params["alpha"], gamma=gamma, epsilon=params["epsilon"], epsilon_min=params["epsilon_min"], epsilon_decay=params["epsilon_decay"], seed=seed)
+        result = train_approx_q_learning(env, episodes=params["episodes"], max_steps=params["max_steps"], alpha=params["alpha"], gamma=gamma, epsilon=params["epsilon"], epsilon_min=params["epsilon_min"], epsilon_decay=params["epsilon_decay"], seed=seed, record_replay=record_replay, progress_callback=progress_callback)
     return {"room_kind": room_kind, "env": env, "result": result, "params": params}
 
 
-def optimize_hyperparameters(room_kind: str, params: Dict[str, Any]) -> Dict[str, Any]:
+def optimize_hyperparameters(
+    room_kind: str,
+    params: Dict[str, Any],
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> Dict[str, Any]:
     if room_kind == "dp":
         variants = [
             {"gamma": 0.92, "theta": 1e-3},
@@ -4373,13 +4383,21 @@ def optimize_hyperparameters(room_kind: str, params: Dict[str, Any]) -> Dict[str
     for index, variant in enumerate(variants, start=1):
         candidate = dict(params)
         candidate.update(variant)
-        candidate["seed"] = int(params["seed"]) + index * 101
+        candidate["seed"] = int(params["seed"])
         if room_kind != "dp":
-            cap = 300 if room_kind in {"sarsa", "q_learning"} else 180
+            cap = 300 if room_kind in {"sarsa", "q_learning"} else (70 if room_kind == "obstacles" else 100)
             candidate["episodes"] = min(int(params["episodes"]), cap)
-        trial = run_training(room_kind, candidate)
+        trial = run_training(
+            room_kind,
+            candidate,
+            record_replay=room_kind not in {"approx", "obstacles"},
+        )
         attempts = trial["result"].get("attempts", [])
-        sample = attempts if room_kind == "dp" else attempts[-min(30, len(attempts)) :]
+        if attempts:
+            sample = attempts if room_kind == "dp" else attempts[-min(30, len(attempts)) :]
+        else:
+            metrics = trial["result"].get("metrics", [])
+            sample = metrics[-min(30, len(metrics)) :]
         success_rate = sum(bool(item["success"]) for item in sample) / max(1, len(sample))
         mean_reward = float(np.mean([float(item["reward"]) for item in sample])) if sample else float("-inf")
         mean_steps = float(np.mean([int(item["steps"]) for item in sample])) if sample else float("inf")
@@ -4402,6 +4420,8 @@ def optimize_hyperparameters(room_kind: str, params: Dict[str, Any]) -> Dict[str
             best_score = score
             best_params = dict(params)
             best_params.update(variant)
+        if progress_callback:
+            progress_callback(index, len(variants))
 
     table = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
     output_dir = Path("runs") / "tuning"
@@ -4610,18 +4630,47 @@ def render_train_tab(room_kind: str) -> None:
         "observation_range": observation_range,
     }
     if optimize_submitted:
-        with st.spinner("Comparing hyperparameter candidates, then training the best configuration..."):
-            tuning = optimize_hyperparameters(room_kind, params)
+        progress = st.progress(0, text="Preparing hyperparameter candidates...")
+
+        def update_tuning_progress(completed: int, total: int) -> None:
+            value = int(40 * completed / max(1, total))
+            progress.progress(value, text=f"Comparing candidates: {completed}/{total}")
+
+        def update_training_progress(completed: int, total: int) -> None:
+            value = 40 + int(60 * completed / max(1, total))
+            progress.progress(value, text=f"Training best configuration: {completed}/{total} episodes")
+
+        with st.spinner("Running the optimized training pipeline..."):
+            tuning = optimize_hyperparameters(room_kind, params, update_tuning_progress)
             st.session_state.setdefault("tuning_by_room", {})[room_kind] = tuning
-            completed_run = run_training(room_kind, tuning["best_params"])
+            progress.progress(40, text="Best candidate selected. Starting the full training run...")
+            completed_run = run_training(
+                room_kind,
+                tuning["best_params"],
+                progress_callback=update_training_progress if room_kind in {"approx", "obstacles"} else None,
+            )
             success_rate = register_training_run(completed_run)
+        progress.progress(100, text="Optimization and training complete.")
         st.success(
             f"Optimization complete. Best configuration trained with {success_rate * 100:.1f}% recent success."
         )
     elif submitted:
+        training_progress = st.progress(0, text="Preparing training...") if room_kind in {"approx", "obstacles"} else None
+
+        def update_standard_progress(completed: int, total: int) -> None:
+            if training_progress is not None:
+                value = int(100 * completed / max(1, total))
+                training_progress.progress(value, text=f"Training episode {completed}/{total}")
+
         with st.spinner("Training the agent and building arcade replays..."):
-            completed_run = run_training(room_kind, params)
+            completed_run = run_training(
+                room_kind,
+                params,
+                progress_callback=update_standard_progress if training_progress is not None else None,
+            )
             success_rate = register_training_run(completed_run)
+        if training_progress is not None:
+            training_progress.progress(100, text="Training complete.")
         attempt_count = len(completed_run["result"].get("attempts", []))
         st.success(
             f"Training complete. All {attempt_count} attempts are available in Replay. "

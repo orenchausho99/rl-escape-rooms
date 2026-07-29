@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
+from escape_room.algorithms import train_approx_q_learning
 from escape_room.envs import (
     CONTINUOUS_ACTIONS,
     ContinuousEscapeRoom,
@@ -125,6 +126,22 @@ class ProjectRequirementTests(unittest.TestCase):
             [item["episode"] for item in filter_replay_attempts(attempts, "Successful only", "Score: highest first")],
             [3, 2],
         )
+
+    def test_fast_tuning_skips_replay_recording_and_reports_progress(self):
+        room = DynamicObstacleRoom(obstacle_room_config(seed=12, obstacle_count=3))
+        progress = []
+        result = train_approx_q_learning(
+            room,
+            episodes=3,
+            max_steps=8,
+            seed=12,
+            record_replay=False,
+            progress_callback=lambda completed, total: progress.append((completed, total)),
+        )
+        self.assertEqual(len(result["metrics"]), 3)
+        self.assertEqual(result["attempts"], [])
+        self.assertEqual(result["snapshots"], [])
+        self.assertEqual(progress[-1], (3, 3))
 
 
 if __name__ == "__main__":

@@ -468,8 +468,11 @@ class ContinuousEscapeRoom:
         self.steps = 0
         return self.state()
 
-    def state(self) -> np.ndarray:
+    def _kinematic_state(self) -> np.ndarray:
         return np.array([self.x, self.y, float(self.vx), float(self.vy)], dtype=float)
+
+    def state(self) -> np.ndarray:
+        return self._kinematic_state()
 
     def distance_to_goal(self, x: Optional[float] = None, y: Optional[float] = None) -> float:
         px = self.x if x is None else x
@@ -516,7 +519,10 @@ class ContinuousEscapeRoom:
             self.x, self.y = self.config.goal
             self.vx = 0
             self.vy = 0
-        return self.state(), reward, done, {"hit_wall": hit_wall, "hit_hazard": hit_hazard}
+        # DynamicObstacleRoom adds its observation after moving the obstacles.
+        # Returning only the kinematic state here avoids calculating that
+        # observation twice for every environment step.
+        return self._kinematic_state(), reward, done, {"hit_wall": hit_wall, "hit_hazard": hit_hazard}
 
 
 def continuous_room_config(seed: int = 23) -> ContinuousRoomConfig:
@@ -583,24 +589,31 @@ class DynamicObstacleRoom(ContinuousEscapeRoom):
         return False
 
     def _nearest_forward_obstacle(self) -> Tuple[float, float, float]:
-        heading = np.array([float(self.vx), float(self.vy)], dtype=float)
-        if np.linalg.norm(heading) < 1e-9:
+        heading_x = float(self.vx)
+        heading_y = float(self.vy)
+        heading_norm = math.hypot(heading_x, heading_y)
+        if heading_norm < 1e-9:
             gx, gy = self.config.goal
-            heading = np.array([gx - self.x, gy - self.y], dtype=float)
-        heading = heading / max(np.linalg.norm(heading), 1e-9)
+            heading_x = gx - self.x
+            heading_y = gy - self.y
+            heading_norm = math.hypot(heading_x, heading_y)
+        heading_x /= max(heading_norm, 1e-9)
+        heading_y /= max(heading_norm, 1e-9)
 
-        best_distance = self.config.observation_range
+        observation_range = self.config.observation_range
+        best_distance_sq = observation_range * observation_range
         best_dx = 0.0
         best_dy = 0.0
         visible = 0.0
         for obstacle in self.obstacles:
-            rel = np.array([obstacle["x"] - self.x, obstacle["y"] - self.y], dtype=float)
-            distance = float(np.linalg.norm(rel))
-            if distance <= self.config.observation_range and float(np.dot(rel, heading)) > 0:
-                if distance < best_distance:
-                    best_distance = distance
-                    best_dx = rel[0] / self.config.observation_range
-                    best_dy = rel[1] / self.config.observation_range
+            dx = obstacle["x"] - self.x
+            dy = obstacle["y"] - self.y
+            distance_sq = dx * dx + dy * dy
+            if distance_sq <= best_distance_sq and dx * heading_x + dy * heading_y > 0:
+                if distance_sq < best_distance_sq:
+                    best_distance_sq = distance_sq
+                    best_dx = dx / observation_range
+                    best_dy = dy / observation_range
                     visible = 1.0
         return best_dx, best_dy, visible
 

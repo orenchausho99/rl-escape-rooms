@@ -404,6 +404,8 @@ Every room has two training options:
 - `Start training` uses the values selected in the interface.
 - `Optimize and train` compares four candidate configurations and then performs a full training run with the best candidate.
 
+To keep optimization practical, the continuous-room candidates use short trial runs and do not record Replay frames. Room 5 evaluates up to 70 episodes per candidate. After a candidate is selected, the application runs the complete requested training and records every episode for Replay.
+
 The candidate score is based mainly on success rate, followed by total reward and solution length:
 
 ```text
