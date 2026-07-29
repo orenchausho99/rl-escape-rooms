@@ -3782,6 +3782,30 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       let cont = null;
       const input = {vx: 0, vy: 0, left:false, right:false, up:false, down:false};
       function rand(min,max){ return min + Math.random() * (max-min); }
+      function createLanderMeteors() {
+        const meteors = [];
+        for (const [zone, h] of cfg.hazards.entries()) {
+          const horizontal = (h[2] - h[0]) >= (h[3] - h[1]);
+          const span = horizontal ? h[2] - h[0] : h[3] - h[1];
+          const count = Math.max(4, Math.min(6, Math.round(span * 1.35)));
+          for (let i = 0; i < count; i++) {
+            const progress = (i + .5) / count;
+            const direction = (i + zone) % 2 === 0 ? 1 : -1;
+            meteors.push({
+              zone,
+              x: horizontal ? h[0] + (h[2] - h[0]) * progress : (h[0] + h[2]) / 2 + (i % 2 ? .12 : -.12),
+              y: horizontal ? (h[1] + h[3]) / 2 + (i % 2 ? .10 : -.10) : h[1] + (h[3] - h[1]) * progress,
+              dx: horizontal ? direction * (.007 + i * .0015) : 0,
+              dy: horizontal ? 0 : direction * (.007 + i * .0012),
+              r: .30 + (i % 3) * .035,
+              spin: rand(0, Math.PI * 2),
+              spinRate: direction * (.022 + i * .004),
+              seed: zone * 11 + i * 7 + 3
+            });
+          }
+        }
+        return meteors;
+      }
       function initContinuous() {
         cont = {
           x: cfg.start[0], y: cfg.start[1], vx: 0, vy: 0,
@@ -3801,26 +3825,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
           }
           cont.message = 'Portal hazards move. Observe forward and reach EXIT.';
         } else {
-          for (const [zone, h] of cfg.hazards.entries()) {
-            const horizontal = (h[2] - h[0]) >= (h[3] - h[1]);
-            const span = horizontal ? h[2] - h[0] : h[3] - h[1];
-            const count = Math.max(3, Math.min(5, Math.round(span)));
-            for (let i = 0; i < count; i++) {
-              const progress = (i + .5) / count;
-              const direction = (i + zone) % 2 === 0 ? 1 : -1;
-              cont.meteors.push({
-                zone,
-                x: horizontal ? h[0] + (h[2] - h[0]) * progress : (h[0] + h[2]) / 2 + (i % 2 ? .10 : -.10),
-                y: horizontal ? (h[1] + h[3]) / 2 + (i % 2 ? .08 : -.08) : h[1] + (h[3] - h[1]) * progress,
-                dx: horizontal ? direction * (.007 + i * .0015) : 0,
-                dy: horizontal ? 0 : direction * (.007 + i * .0012),
-                r: .22 + (i % 3) * .025,
-                spin: rand(0, Math.PI * 2),
-                spinRate: direction * (.022 + i * .004),
-                seed: zone * 11 + i * 7 + 3
-              });
-            }
-          }
+          cont.meteors = createLanderMeteors();
           cont.message = 'Avoid the asteroid fields and reach PAD using one of nine discrete velocities.';
         }
       }
@@ -3843,6 +3848,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       }
       function updateLanderMeteors(scale=1) {
         if (cfg.obstacleMode || cfg.teleportMode) return;
+        if (!cont.meteors.length) cont.meteors = createLanderMeteors();
         for (const meteor of cont.meteors || []) {
           const h = cfg.hazards[meteor.zone];
           meteor.x += meteor.dx * scale;
@@ -4096,6 +4102,15 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         ctx.save();
         ctx.translate(mx, my);
         ctx.rotate(heading);
+        if (cfg.replay) {
+          ctx.beginPath();
+          ctx.arc(0, 0, mr * 1.55, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(249,115,22,.24)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(254,240,138,.92)';
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+        }
         ctx.globalCompositeOperation = 'screen';
         const glow = ctx.createRadialGradient(-mr * 1.4, 0, 1, -mr * 1.4, 0, mr * 3.4);
         glow.addColorStop(0, 'rgba(254,240,138,.82)');
@@ -4402,6 +4417,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       }
       function updateReplayDecor(now) {
         if (!cont) return;
+        if (!Number.isFinite(now)) return;
         cont.anim = now;
         if (!replayDecorLast) replayDecorLast = now;
         const scale = Math.min(2, (now - replayDecorLast) / 16.67);
@@ -4542,7 +4558,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       canvas.addEventListener('pointerdown', focusGame);
       if (cfg.mode === 'grid') initGrid(); else initContinuous();
       if (cfg.replay) applyReplayFrame(0);
-      loop();
+      requestAnimationFrame(loop);
       </script>
     </div>
     """

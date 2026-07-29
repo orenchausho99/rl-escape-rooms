@@ -183,6 +183,10 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertIn("const replayBaseDelay = cfg.mode === 'continuous' ? 20 : 450", app_source)
         self.assertIn("replayIndex + frameAdvance", app_source)
         self.assertIn("Step ' + replayIndex + ' of '", app_source)
+        self.assertIn("function createLanderMeteors()", app_source)
+        self.assertIn("if (!cont.meteors.length) cont.meteors = createLanderMeteors()", app_source)
+        self.assertIn("if (!Number.isFinite(now)) return", app_source)
+        self.assertIn("requestAnimationFrame(loop);", app_source)
 
     def test_fast_tuning_skips_replay_recording_and_reports_progress(self):
         room = DynamicObstacleRoom(obstacle_room_config(seed=12, obstacle_count=3))
