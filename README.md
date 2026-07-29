@@ -38,7 +38,7 @@ The main purpose of the project was to experiment with:
 7. Open `Analytics` to see the learning graphs.
 8. Open `Room Specs` to see the state, actions, terminal condition, and rewards.
 
-The Player Profile is a session profile, not a password-based authentication system. It personalizes the dashboard without changing any environment, reward, state, or learning algorithm. Guest mode keeps the application immediately available during demonstrations.
+The Player Profile stores only a display name for the current Streamlit session. It is not a password-based authentication system and does not change any environment, reward, state, parameter, or learning algorithm. Guest mode keeps the application immediately available during demonstrations.
 
 A room is marked as completed when the trained agent reaches at least a 60% success rate in its recent attempts. For the first room, all 12 policy rollouts are used.
 

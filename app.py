@@ -54,6 +54,13 @@ TUNED_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "obstacles": {"episodes": 450, "max_steps": 1400, "alpha": 0.08, "gamma": 0.985, "epsilon": 0.40, "epsilon_min": 0.03, "epsilon_decay": 0.993, "obstacle_count": 7, "observation_range": 3.0},
 }
 
+EPISODE_CONTROLS: Dict[str, Dict[str, int]] = {
+    "sarsa": {"min": 50, "max": 2500, "default": 650, "step": 50},
+    "q_learning": {"min": 50, "max": 2500, "default": 650, "step": 50},
+    "approx": {"min": 50, "max": 1500, "default": 450, "step": 50},
+    "obstacles": {"min": 50, "max": 1000, "default": 450, "step": 50},
+}
+
 ROOM_THEMES: Dict[str, Dict[str, Any]] = {
     "dp": {
         "menu": "1. Pac-Man Ice Maze",
@@ -4696,11 +4703,12 @@ def render_train_guide(room_kind: str) -> None:
         if is_dp
         else "<b>Learning policy</b><span>Alpha controls update strength; epsilon controls exploration and decays over episodes.</span>"
     )
-    environment = (
-        "<b>Grid dynamics</b><span>Slip probability and the episode limit control movement uncertainty and search depth.</span>"
-        if room_kind in {"dp", "sarsa", "q_learning"}
-        else "<b>Continuous dynamics</b><span>The episode limit controls how long the agent can search the 10x10 meter room.</span>"
-    )
+    if room_kind == "dp":
+        environment = "<b>Known model</b><span>Slip changes transition probabilities; rollout steps limit policy evaluation, not Value Iteration.</span>"
+    elif room_kind in {"sarsa", "q_learning"}:
+        environment = "<b>Grid dynamics</b><span>Slip probability and the episode step limit control movement uncertainty and search depth.</span>"
+    else:
+        environment = "<b>Continuous dynamics</b><span>The episode step limit controls how long the agent can search the 10x10 meter room.</span>"
     if room_kind == "obstacles":
         environment = "<b>Portal observation</b><span>Control the moving 0.5m hazards and how far ahead the agent can observe.</span>"
 
@@ -4762,12 +4770,16 @@ def render_train_tab(room_kind: str) -> None:
             else:
                 slip = 0.0
             max_steps = st.slider(
-                "Max steps per episode",
+                "Max steps per policy rollout" if room_kind == "dp" else "Max steps per episode",
                 80 if room_kind in {"dp", "sarsa", "q_learning"} else 200,
                 1600,
                 250 if room_kind in {"dp", "sarsa"} else (1400 if room_kind == "obstacles" else 850),
                 10 if room_kind in {"dp", "sarsa", "q_learning"} else 50,
-                help="Maximum number of actions before an episode is stopped.",
+                help=(
+                    "Maximum number of actions in each policy evaluation rollout. This does not control Value Iteration."
+                    if room_kind == "dp"
+                    else "Maximum number of actions before a training episode is stopped."
+                ),
             )
         with col3:
             st.markdown('<div class="form-section">Algorithm</div>', unsafe_allow_html=True)
@@ -4786,16 +4798,19 @@ def render_train_tab(room_kind: str) -> None:
                     50,
                     help="Maximum number of full passes over all states.",
                 )
+                st.caption("Value Iteration uses model sweeps, not training episodes. Replay is created from policy rollouts after convergence.")
                 episodes = alpha = epsilon = epsilon_min = epsilon_decay = 0
             else:
+                episode_control = EPISODE_CONTROLS[room_kind]
                 episodes = st.slider(
-                    "Training episodes",
-                    50,
-                    2500,
-                    650 if room_kind in {"sarsa", "q_learning"} else 450,
-                    50,
-                    help="Number of complete attempts used for learning.",
+                    "Episodes - training attempts",
+                    episode_control["min"],
+                    episode_control["max"],
+                    episode_control["default"],
+                    episode_control["step"],
+                    help="Number of complete attempts used for learning. More episodes can improve learning but increase training time.",
                 )
+                st.caption(f"The agent will learn from {episodes:,} complete episodes. Every episode will be available in Replay.")
                 alpha = st.slider(
                     "Alpha - learning rate",
                     0.01,
@@ -4939,7 +4954,7 @@ def render_train_tab(room_kind: str) -> None:
             + ", ".join(
                 f"{name}={value}"
                 for name, value in best.items()
-                if name in {"alpha", "gamma", "epsilon", "epsilon_decay", "theta"}
+                if name in {"episodes", "alpha", "gamma", "epsilon", "epsilon_decay", "theta"}
             )
             + f". Comparison saved to {tuning['path']}."
         )
