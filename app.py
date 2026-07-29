@@ -3232,7 +3232,9 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         if (grid.traps.has(here)) {
           grid.score += cfg.trapRewards[here] || 0;
           grid.hits += 1;
-          grid.message = 'Laser tile hit. Keep the crate route clean.';
+          const laserCenter = cellCenter(grid.pos);
+          emitBurst(laserCenter.x, laserCenter.y, '#fb7185', 34);
+          grid.message = 'Security laser triggered. Find a safer crate route.';
           screenEffect('hit');
         }
         if (grid.bonusesSet.has(here) && !grid.bonuses.has(here)) {
@@ -3602,6 +3604,79 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         drawPacAgent(p.x, p.y);
         writeLabel('GHOST HUNT ' + grid.phase, 720, 28, 12, '#bae6fd');
       }
+      function drawVaultLaserGate(x, y, cell, row, col) {
+        const time = grid.anim * .0042 + row * .83 + col * .47;
+        const cx = x + cell / 2;
+        const cy = y + cell / 2;
+        const sweep = Math.sin(time) * cell * .16;
+        const pulse = (Math.sin(time * 1.7) + 1) / 2;
+        const horizontal = (row + col) % 2 === 0;
+        const inset = 7;
+        const beams = horizontal
+          ? [
+              [x + inset, cy - sweep, x + cell - inset, cy + sweep],
+              [x + inset, cy + sweep, x + cell - inset, cy - sweep]
+            ]
+          : [
+              [cx - sweep, y + inset, cx + sweep, y + cell - inset],
+              [cx + sweep, y + inset, cx - sweep, y + cell - inset]
+            ];
+
+        ctx.save();
+        const dangerGlow = ctx.createRadialGradient(cx, cy, 2, cx, cy, cell * .62);
+        dangerGlow.addColorStop(0, 'rgba(244,63,94,.22)');
+        dangerGlow.addColorStop(.58, 'rgba(190,24,93,.10)');
+        dangerGlow.addColorStop(1, 'rgba(76,5,25,0)');
+        ctx.fillStyle = dangerGlow;
+        ctx.fillRect(x + 4, y + 4, cell - 8, cell - 8);
+
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = 'rgba(253,164,175,.52)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x + 6, y + 6, cell - 12, cell - 12);
+        ctx.setLineDash([]);
+
+        ctx.globalCompositeOperation = 'lighter';
+        beams.forEach((beam, index) => {
+          const [x1, y1, x2, y2] = beam;
+          ctx.shadowColor = '#fb7185';
+          ctx.shadowBlur = 16 + pulse * 8;
+          ctx.strokeStyle = 'rgba(244,63,94,.24)';
+          ctx.lineWidth = 11;
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          ctx.strokeStyle = index === 0 ? '#fb7185' : '#f43f5e';
+          ctx.lineWidth = 3.5;
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,241,242,.95)';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+          const travel = (grid.anim * .0015 + index * .5 + row * .13) % 1;
+          const px = x1 + (x2 - x1) * travel;
+          const py = y1 + (y2 - y1) * travel;
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowBlur = 12;
+          ctx.beginPath(); ctx.arc(px, py, 2.5 + pulse, 0, Math.PI * 2); ctx.fill();
+        });
+        ctx.restore();
+
+        const endpoints = beams.flatMap(beam => [[beam[0], beam[1]], [beam[2], beam[3]]]);
+        endpoints.forEach(([px, py]) => {
+          ctx.save();
+          ctx.translate(px, py);
+          ctx.fillStyle = '#3f1725';
+          ctx.strokeStyle = '#fda4af';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(0, 0, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = pulse > .42 ? '#fff1f2' : '#fb7185';
+          ctx.shadowColor = '#fb7185';
+          ctx.shadowBlur = 9;
+          ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        });
+
+        writeLabel('LASER', cx, y + cell - 7, 7, '#fecdd3');
+      }
       function drawMuseumVault() {
         const cell = gridLayout.cell, bx = gridLayout.bx, by = gridLayout.by;
         gridBack('Sokoban Vault', 'push BOX onto TARGET, then enter SAFE', '#120c24', '#2e1065');
@@ -3623,11 +3698,7 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
               writeLabel('OIL', x+cell/2, y+cell/2+4, 10, '#e9d5ff');
             }
             if (grid.traps.has(k)) {
-              const shift = Math.sin(grid.anim * .008 + r) * 10;
-              ctx.strokeStyle = '#fb7185'; ctx.lineWidth = 4;
-              ctx.shadowColor = '#fb7185'; ctx.shadowBlur = 10;
-              ctx.beginPath(); ctx.moveTo(x+8, y+cell/2+shift); ctx.lineTo(x+cell-8, y+cell/2-shift); ctx.stroke();
-              ctx.shadowBlur = 0;
+              drawVaultLaserGate(x, y, cell, r, c);
             }
           }
         }
@@ -3660,13 +3731,15 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
         writeLabel('SAFE', safe.x + safe.s / 2, safe.y + safe.s - 12, 10, '#dcfce7');
         const p = visualPlayerCenter();
         drawVaultRunner(p.x, p.y);
-        const scannerX = bx + 30 + ((grid.anim * .08) % (cell * 9));
-        const scannerY = by + cell * 4.45;
-        ctx.beginPath(); ctx.arc(scannerX, scannerY, 12, 0, Math.PI*2);
-        ctx.fillStyle = '#fb7185'; ctx.fill();
-        ctx.strokeStyle = '#fecdd3'; ctx.lineWidth = 3; ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(scannerX, scannerY+12); ctx.lineTo(scannerX, scannerY+38);
-        ctx.strokeStyle = 'rgba(251,113,133,.5)'; ctx.lineWidth = 5; ctx.stroke();
+        const armedPulse = .55 + Math.sin(grid.anim * .009) * .35;
+        ctx.save();
+        ctx.globalAlpha = armedPulse;
+        ctx.fillStyle = '#fb7185';
+        ctx.shadowColor = '#fb7185';
+        ctx.shadowBlur = 12;
+        ctx.beginPath(); ctx.arc(653, 27, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        writeLabel('LASER GRID ARMED', 720, 31, 10, '#fecdd3');
       }
       function drawReactorCore() {
         const cell = gridLayout.cell, bx = gridLayout.bx, by = gridLayout.by;

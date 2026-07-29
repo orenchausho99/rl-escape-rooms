@@ -98,6 +98,12 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertFalse(done)
         self.assertGreater(reward, 0)
 
+    def test_sokoban_lasers_use_animated_gate_visuals(self):
+        app_source = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
+        self.assertIn("function drawVaultLaserGate", app_source)
+        self.assertIn("LASER GRID ARMED", app_source)
+        self.assertIn("Security laser triggered", app_source)
+
     def test_slippery_tiles_are_distributed_across_the_grid(self):
         for config in (room1_config(), room2_config()):
             slippery = config.slippery
