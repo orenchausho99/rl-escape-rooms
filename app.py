@@ -46,13 +46,6 @@ st.set_page_config(page_title="RL Escape Rooms", layout="wide", initial_sidebar_
 ROOM_ORDER = ["dp", "sarsa", "q_learning", "approx", "obstacles"]
 ACTION_LABELS = ("Up", "Right", "Down", "Left")
 
-PLAYER_ROLES: Dict[str, Dict[str, str]] = {
-    "Pathfinder": {"code": "PF", "description": "Plans routes and values efficient solutions."},
-    "Analyst": {"code": "AN", "description": "Focuses on metrics, comparison, and repeatable experiments."},
-    "Explorer": {"code": "EX", "description": "Favors discovery, testing, and broad state-space coverage."},
-    "Operator": {"code": "OP", "description": "Balances gameplay, training, replay, and analysis."},
-}
-
 TUNED_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "dp": {"gamma": 0.96, "slip": 0.25, "theta": 1e-4, "max_iterations": 1000, "max_steps": 220},
     "sarsa": {"episodes": 650, "max_steps": 250, "alpha": 0.15, "gamma": 0.96, "epsilon": 0.40, "epsilon_min": 0.03, "epsilon_decay": 0.993, "slip": 0.18},
@@ -880,24 +873,6 @@ def css() -> None:
         div.stButton > button:disabled *,
         button[data-testid="stBaseButton-secondary"]:disabled * {
             color: #69727e !important;
-        }
-        [data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_control"] {
-            border-color: #4a535f !important;
-            background: #171c24 !important;
-            color: #eef2f7 !important;
-        }
-        [data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_control"] * {
-            color: #eef2f7 !important;
-            opacity: 1 !important;
-        }
-        [data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"] {
-            border-color: var(--electric) !important;
-            background: #174d76 !important;
-            color: #ffffff !important;
-        }
-        [data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"] * {
-            color: #ffffff !important;
-            opacity: 1 !important;
         }
         .select-head {
             display: grid;
@@ -1893,30 +1868,20 @@ def render_welcome() -> None:
         </div>
         <div class="profile-form-head">
           <div class="dashboard-kicker">Player Setup</div>
-          <h2>Create your session profile</h2>
-          <p>Choose a display name and training style, or enter immediately as a guest.</p>
+          <h2>Choose a player name</h2>
+          <p>Use your name in the campaign dashboard, or enter immediately as a guest.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     with st.container(border=True):
-        name_col, role_col = st.columns([0.42, 0.58], vertical_alignment="bottom")
-        with name_col:
-            player_name = st.text_input(
-                "Player name",
-                max_chars=24,
-                placeholder="Enter your name",
-                help="This name is shown in the campaign dashboard for the current session.",
-            )
-        with role_col:
-            player_role = st.segmented_control(
-                "Training style",
-                options=list(PLAYER_ROLES),
-                default="Pathfinder",
-                selection_mode="single",
-                help="This choice personalizes the dashboard only and does not change the RL algorithms.",
-            )
+        player_name = st.text_input(
+            "Player name",
+            max_chars=24,
+            placeholder="Enter your name",
+            help="This name is shown in the campaign dashboard for the current session.",
+        )
 
         start_col, guest_col = st.columns([0.68, 0.32])
         with start_col:
@@ -1938,19 +1903,14 @@ def render_welcome() -> None:
         if not clean_name:
             st.error("Enter a player name or continue as a guest.")
             return
-        selected_role = player_role or "Pathfinder"
         st.session_state["player_profile"] = {
             "name": clean_name,
-            "role": selected_role,
-            "code": PLAYER_ROLES[selected_role]["code"],
             "guest": False,
         }
         st.rerun()
     elif continue_guest:
         st.session_state["player_profile"] = {
             "name": "Guest Agent",
-            "role": "Explorer",
-            "code": PLAYER_ROLES["Explorer"]["code"],
             "guest": True,
         }
         st.rerun()
@@ -1961,7 +1921,6 @@ def header(room_kind: str | None) -> None:
     current_label = ROOM_THEMES[room_kind]["title"] if room_kind else "Room Select"
     profile = st.session_state.get("player_profile", {})
     player_name = str(profile.get("name", "Guest Agent"))
-    player_code = str(profile.get("code", "EX"))
     st.markdown(
         f"""
         <div class="topbar">
@@ -1976,7 +1935,7 @@ def header(room_kind: str | None) -> None:
             <div class="topbar-badges">
               <span class="topbar-badge active">Current<strong>{html.escape(current_label)}</strong></span>
               <span class="topbar-badge">Campaign<strong>{completed} / {len(ROOM_ORDER)} cleared</strong></span>
-              <span class="topbar-badge">Player<strong><i class="status-live"></i>{html.escape(player_code)} · {html.escape(player_name)}</strong></span>
+              <span class="topbar-badge">Player<strong><i class="status-live"></i>{html.escape(player_name)}</strong></span>
             </div>
           </div>
         </div>
@@ -5466,8 +5425,6 @@ def clear_room_selection() -> None:
 def render_campaign_dashboard() -> None:
     profile = st.session_state.get("player_profile", {})
     player_name = str(profile.get("name", "Guest Agent"))
-    player_role = str(profile.get("role", "Explorer"))
-    role_description = PLAYER_ROLES.get(player_role, PLAYER_ROLES["Explorer"])["description"]
     completed = set(st.session_state.get("completed_rooms", []))
     runs = st.session_state.get("runs_by_room", {})
     success_rates = [run_success_rate(run) for run in runs.values()]
@@ -5483,7 +5440,7 @@ def render_campaign_dashboard() -> None:
           <div>
             <div class="dashboard-kicker">Campaign Dashboard</div>
             <h2>Welcome, {html.escape(player_name)}</h2>
-            <p><b>{html.escape(player_role)}</b> profile. {html.escape(role_description)} Continue the campaign or select any room below.</p>
+            <p>Continue your campaign, revisit a completed room, or select a new training environment below.</p>
           </div>
           <div class="dashboard-stats">
             <div class="dashboard-stat"><span>Rooms cleared</span><strong>{len(completed)}/{len(ROOM_ORDER)}</strong></div>

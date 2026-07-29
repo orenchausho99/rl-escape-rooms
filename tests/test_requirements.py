@@ -30,6 +30,8 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertIn('"Continue as guest"', app_source)
         self.assertIn("def render_campaign_dashboard", app_source)
         self.assertIn('[data-testid="stTextInput"] input', app_source)
+        self.assertNotIn('"Training style"', app_source)
+        self.assertNotIn("PLAYER_ROLES", app_source)
         self.assertIn('st.tabs(["Play Game", "Train Agent", "Episode Replay", "Analytics", "Room Specs"])', app_source)
 
     def test_room_selection_thumbnails_are_packaged(self):
