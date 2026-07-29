@@ -1660,6 +1660,29 @@ def css() -> None:
             background: #171b22 !important;
             color: #ffffff !important;
         }
+        [data-testid="stTextInput"] [data-baseweb="input"],
+        [data-testid="stTextInput"] [data-baseweb="base-input"] {
+            border-color: #46505c !important;
+            background: #171b22 !important;
+        }
+        [data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
+        [data-testid="stTextInput"] [data-baseweb="base-input"]:focus-within {
+            border-color: #38bdf8 !important;
+            box-shadow: 0 0 0 1px #38bdf8 !important;
+        }
+        [data-testid="stTextInput"] input {
+            background: transparent !important;
+            color: #f8fafc !important;
+            -webkit-text-fill-color: #f8fafc !important;
+            caret-color: #38bdf8 !important;
+            opacity: 1 !important;
+            font-weight: 800 !important;
+        }
+        [data-testid="stTextInput"] input::placeholder {
+            color: #9aa5b3 !important;
+            -webkit-text-fill-color: #9aa5b3 !important;
+            opacity: 1 !important;
+        }
         [data-testid="stNumberInput"] [data-baseweb="input"],
         [data-testid="stNumberInput"] [data-baseweb="base-input"] {
             background: #171b22 !important;
