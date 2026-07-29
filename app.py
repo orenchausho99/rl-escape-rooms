@@ -153,13 +153,13 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
     "obstacles": {
         "menu": "5. Portal Hazard Run",
         "title": "Portal Hazard Run",
-        "subtitle": "Moving portal hazards with local forward observation",
+        "subtitle": "Moving portals with random relocation and local forward observation",
         "algorithm": "Approximate Q-Learning",
         "inspiration": "Inspired by Portal",
         "art": "portal-arena.webp",
         "thumbnail_art": "portal-hazard-thumbnail-v2.webp",
         "banner_art": "portal-hazard-banner-v2.webp",
-        "mission": "Avoid moving portal hazards and reach EXIT. The agent observes only the nearest portal within X meters in front of it.",
+        "mission": "Reach EXIT while moving portals cross the room. Contact causes a penalized random teleport, and the agent observes only the nearest portal within X meters in front of it.",
         "agent": "PORTAL",
         "goal": "EXIT",
         "state": "X, Y, Vx, Vy, obstacle_dx, obstacle_dy, visible",
@@ -171,7 +171,7 @@ ROOM_THEMES: Dict[str, Dict[str, Any]] = {
         "danger": "#dc2626",
         "key": "#fde047",
         "portal": "#a855f7",
-        "objectives": ["Observe forward", "Avoid moving portals", "Reach EXIT"],
+        "objectives": ["Observe forward", "Avoid random teleports", "Reach EXIT"],
     },
 }
 
@@ -3588,6 +3588,19 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
       function inHazard(x,y) {
         return cfg.hazards.some(h => x >= h[0] && x <= h[2] && y >= h[1] && y <= h[3]);
       }
+      function randomSafePortalLanding(minimumGoalDistance) {
+        const margin = .65;
+        const obstacleMargin = cfg.obstacleWidth / 2 + .2;
+        for (let attempt = 0; attempt < 240; attempt++) {
+          const x = rand(margin, cfg.roomSize - margin);
+          const y = rand(margin, cfg.roomSize - margin);
+          if (Math.hypot(cfg.goal[0] - x, cfg.goal[1] - y) < minimumGoalDistance) continue;
+          if (inHazard(x, y)) continue;
+          if (cont.obstacles.some(o => Math.abs(x-o.x) <= obstacleMargin && Math.abs(y-o.y) <= obstacleMargin)) continue;
+          return {x, y};
+        }
+        return {x: cfg.start[0], y: cfg.start[1]};
+      }
       function updateLanderMeteors(scale=1) {
         if (cfg.obstacleMode || cfg.teleportMode) return;
         for (const meteor of cont.meteors || []) {
@@ -3655,14 +3668,16 @@ def arcade_component(room_kind: str, replay_attempt: Dict[str, Any] | None = Non
               const collision = continuousCanvasPoint(cont.x, cont.y);
               emitBurst(collision.x, collision.y, '#f97316', 30);
               const collisionDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
-              cont.score += cfg.obstaclePenalty; cont.x = cfg.start[0]; cont.y = cfg.start[1];
+              const landing = randomSafePortalLanding(Math.min(8, collisionDist));
+              cont.score += cfg.obstaclePenalty; cont.x = landing.x; cont.y = landing.y;
               cont.vx = 0; cont.vy = 0;
-              const resetDist = Math.hypot(cfg.goal[0]-cont.x, cfg.goal[1]-cont.y);
-              cont.score += cfg.progressScale * (collisionDist - resetDist);
-              cont.message = 'Portal collision. Teleported back to start.';
+              const arrival = continuousCanvasPoint(cont.x, cont.y);
+              emitBurst(arrival.x, arrival.y, '#c084fc', 38);
+              cont.message = 'Portal contact! Random safe relocation; velocity reset.';
               cont.hits += 1;
               cont.effectCooldown = 30;
               screenEffect('hit');
+              break;
             }
           }
         }
@@ -5139,7 +5154,7 @@ def render_details_tab(room_kind: str) -> None:
             ("Progress shaping", env.config.progress_scale),
         ]
         if room_kind == "obstacles":
-            reward_rows.append(("Hit moving obstacle", env.config.obstacle_penalty))
+            reward_rows.append(("Portal teleport", env.config.obstacle_penalty))
 
     environment_markup = "".join(
         f'<div class="reward-row"><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>'

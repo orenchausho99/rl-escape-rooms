@@ -588,6 +588,25 @@ class DynamicObstacleRoom(ContinuousEscapeRoom):
                 return True
         return False
 
+    def _random_safe_teleport(self, minimum_goal_distance: float) -> Tuple[float, float]:
+        margin = 0.65
+        obstacle_margin = self.config.obstacle_width / 2.0 + 0.2
+        for _ in range(240):
+            x = self.rng.uniform(margin, self.config.room_size - margin)
+            y = self.rng.uniform(margin, self.config.room_size - margin)
+            if self.distance_to_goal(x, y) < minimum_goal_distance:
+                continue
+            if self._inside_hazard(x, y):
+                continue
+            if any(
+                abs(x - obstacle["x"]) <= obstacle_margin
+                and abs(y - obstacle["y"]) <= obstacle_margin
+                for obstacle in self.obstacles
+            ):
+                continue
+            return x, y
+        return self.config.start
+
     def _nearest_forward_obstacle(self) -> Tuple[float, float, float]:
         heading_x = float(self.vx)
         heading_y = float(self.vy)
@@ -629,11 +648,15 @@ class DynamicObstacleRoom(ContinuousEscapeRoom):
         if hit_obstacle:
             reward += self.config.obstacle_penalty
             collision_distance = self.distance_to_goal()
-            self.x, self.y = self.config.start
+            teleport_from = (self.x, self.y)
+            minimum_goal_distance = min(8.0, collision_distance)
+            self.x, self.y = self._random_safe_teleport(minimum_goal_distance)
             self.vx = 0
             self.vy = 0
-            reward += self.config.progress_scale * (collision_distance - self.distance_to_goal())
             done = False
+            info["teleported"] = True
+            info["teleport_from"] = teleport_from
+            info["teleport_to"] = (self.x, self.y)
         next_state = self.state()
         info["hit_obstacle"] = hit_obstacle
         return next_state, reward, done, info

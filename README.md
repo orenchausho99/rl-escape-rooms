@@ -323,7 +323,7 @@ With all five asteroid fields enabled, `37/50` of the final episodes succeeded. 
 
 ### Task
 
-This is the optional and hardest room. The agent must reach the exit while avoiding moving portal hazards. The number and position of the obstacles change, and the agent can only observe a limited distance in front of it.
+This is the optional and hardest room. The agent must reach the exit while avoiding moving portal hazards. The number and position of the obstacles change, and the agent can only observe a limited distance in front of it. Unlike the Pac-Man ghosts, a portal does not chase the player or send it back to the start. Contact gives a penalty and teleports the player to another random safe position.
 
 ### Algorithm
 
@@ -346,7 +346,7 @@ I used Approximate Q-Learning again, but this time the feature vector also inclu
 | Default observation range | `3` meters, configurable from 1 to 6 |
 | Position | Randomized when the room is reset |
 | Movement | Horizontal or vertical |
-| Collision | Penalty and teleport back to the start |
+| Collision | Penalty and teleport to a random safe position |
 
 The distance is measured from the center of the player to the center of the obstacle. Only the nearest obstacle in front of the current heading is added to the observation.
 
@@ -361,7 +361,7 @@ The agent must reach `EXIT` without being sent back by a moving portal.
 | Every time step | `-0.015` |
 | Progress toward EXIT | `4.5 * (old_distance - new_distance)` |
 | Reach EXIT | `+45` |
-| Moving obstacle collision | `-8` and return to start |
+| Moving portal collision | `-8`, random safe teleport, and velocity reset |
 | Static hazard collision | `-2.5` |
 | Wall collision | `-0.6` |
 
@@ -379,7 +379,7 @@ obstacle_count = 7
 observation_range = 3.0
 ```
 
-In my verification, `35/50` of the final episodes succeeded. The average was about 1081.9 steps. This room is intentionally harder because both the obstacle layout and the observation are changing.
+With the random-teleport mechanic enabled, `49/50` of the final episodes succeeded in my verification. The successful episodes averaged about 659.65 steps, and the final 50 episodes had a mean reward of 83.95. The room is still challenging because the obstacle layout, portal motion, teleport destination, and observation are changing.
 
 After training, the Replay tab can create a new random room using a different seed and test the learned policy without additional training.
 

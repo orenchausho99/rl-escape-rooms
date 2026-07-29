@@ -112,6 +112,17 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertEqual(config.observation_range, 4.0)
         self.assertEqual(len(state), 7)
 
+        room.x, room.y = 4.0, 4.0
+        room.vx = room.vy = 0
+        room.obstacles = [{"x": 4.0, "y": 4.0, "axis": 0.0, "direction": 1.0}]
+        teleported_state, reward, done, info = room.step(4)
+        self.assertTrue(info["hit_obstacle"])
+        self.assertTrue(info["teleported"])
+        self.assertNotEqual(tuple(teleported_state[:2]), config.start)
+        self.assertEqual(tuple(teleported_state[2:4]), (0.0, 0.0))
+        self.assertLess(reward, 0.0)
+        self.assertFalse(done)
+
     def test_replay_library_contains_every_episode(self):
         attempts = [
             {"episode": 1, "reward": -4.0, "steps": 5, "success": False, "epsilon": 0.8},
