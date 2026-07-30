@@ -500,13 +500,15 @@ The tests check the main project requirements, including the grid sizes, slipper
 
 ## Publishing with Streamlit Community Cloud
 
+Live application: [RL Escape Rooms](https://rl-escape-rooms.streamlit.app/)
+
 1. Push the project to a public GitHub repository.
 2. Open [Streamlit Community Cloud](https://share.streamlit.io/).
 3. Select the repository and the `main` branch.
 4. Set the main file path to `app.py`.
-5. Deploy the application.
+5. Select Python 3.11 and deploy the application.
 
-The project does not need API keys or other secrets.
+The project does not require API keys or other secrets.
 
 ## Final summary
 
