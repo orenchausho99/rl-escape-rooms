@@ -1,179 +1,69 @@
 # RL Escape Rooms
 
-## About the project
+This is my final reinforcement-learning project. I built an escape-room campaign with five different games. Each room has a different task, state, reward function, and learning algorithm. The rooms become harder as the campaign continues, and the agent gets a better score when it reaches the final state in fewer steps.
 
-For my final project, I built an escape-room game that lets me train and compare different reinforcement-learning algorithms.
+- **Live app:** [rl-escape-rooms.streamlit.app](https://rl-escape-rooms.streamlit.app/)
+- **GitHub:** [github.com/orenchausho99/rl-escape-rooms](https://github.com/orenchausho99/rl-escape-rooms)
 
-The project has five rooms. Each room has a different game, state representation, reward function, and learning algorithm. The rooms become harder as the campaign continues. The goal in every room is to reach one final state, and the agent receives a better total reward when it solves the room in fewer steps.
+The project is written in Python. I used Streamlit for the interface and HTML Canvas for the games.
 
-The first three rooms use a `10x10` grid. The fourth room uses continuous position and discrete velocity. The fifth room is an extra challenge with moving obstacles and limited observation.
+## Main features
 
-The application is written in Python and uses Streamlit for the interface. The games themselves are displayed with an HTML Canvas component inside Streamlit.
+- Five different rooms and four reinforcement-learning methods.
+- `10x10` grids in the first three rooms.
+- A continuous `10x10` meter environment in Rooms 4 and 5.
+- Controls for the training parameters and number of episodes.
+- Hyperparameter comparison before the full training run.
+- Analytics for reward, steps, success, exploration, and convergence.
+- Replay of every training episode.
+- Keyboard controls with the arrow keys or `WASD`.
 
-Live application: [https://rl-escape-rooms.streamlit.app/](https://rl-escape-rooms.streamlit.app/)
-
-GitHub repository: [https://github.com/orenchausho99/rl-escape-rooms](https://github.com/orenchausho99/rl-escape-rooms)
-
-## What I wanted to test
-
-The main purpose of the project was to experiment with:
-
-- Dynamic Programming when the environment model is known.
-- SARSA and Q-Learning when the model is unknown.
-- Approximate Q-Learning when the state space is continuous.
-- Exploration with an epsilon-greedy policy.
-- Reward design and the effect of step penalties.
-- Hyperparameter tuning and reproducible experiments.
-- Saving learning results and replaying individual episodes.
-- Generalization to a new random room.
-
-## How to use the application
-
-1. Create a Player Profile or select `Continue as guest`.
-2. Use the Campaign Dashboard to continue the current campaign or choose one of the five rooms.
-3. Open `Play Game` to understand the room and play it with the keyboard.
-4. Open `Train Agent` and choose the training parameters.
-5. Start a normal training run or use `Optimize and train`.
-6. Open `Episode Replay` to watch any recorded episode.
-7. Open `Analytics` to see the learning graphs.
-8. Open `Room Specs` to see the state, actions, terminal condition, and rewards.
-
-The Player Profile stores only a display name for the current Streamlit session. It is not a password-based authentication system and does not change any environment, reward, state, parameter, or learning algorithm. Guest mode keeps the application immediately available during demonstrations.
-
-A room is marked as completed when the trained agent reaches at least a 60% success rate in its recent attempts. For the first room, all 12 policy rollouts are used.
-
-## Keyboard controls
-
-- Grid rooms: arrow keys or `W`, `A`, `S`, `D` move one tile at a time.
-- Continuous rooms: hold the arrow keys or `W`, `A`, `S`, `D` to choose the velocity.
-- On a phone or tablet, touch controls are shown below the game.
-- In the Pac-Man room, the ghosts keep moving and chasing the player even when the player is standing still.
-
-## Project requirements
-
-| Requirement | How it is implemented |
-|---|---|
-| At least four different rooms | The project contains five rooms |
-| First three rooms are `10x10` grids | Rooms 1, 2, and 3 use grid environments |
-| Known environment model | Room 1 uses Value Iteration |
-| Unknown environment model | Rooms 2 and 3 learn only from sampled `step()` results |
-| SARSA | Used in Room 2 |
-| Q-Learning | Used in Room 3 |
-| Function approximation | Used in Rooms 4 and 5 |
-| Continuous `10x10` meter room | Used in Rooms 4 and 5 |
-| State `X,Y,Vx,Vy` | Room 4 uses exactly these four values |
-| Time step of `0.02` seconds | Defined in `ContinuousRoomConfig` |
-| Discrete velocity values | Nine combinations from `Vx,Vy in {-1,0,1}` |
-| Optional dynamic obstacle room | Implemented as Room 5 |
-| Obstacle width of `0.5` meters | Used in Room 5 |
-| Configurable forward observation | The user can select the observation distance |
-| Random room test | Room 5 can test the learned policy with a new seed |
-| Training and exploration graphs | Reward, steps, success, epsilon, convergence, and TD error |
-| Individual episode replay | Every training attempt is stored and can be replayed |
-| Hyperparameter control | Available in the training tab of every room |
-| Hyperparameter optimization | Four candidates are compared before the best full run |
-| Saved experiment results | CSV, JSON, and PNG files are saved under `runs/` |
-
-## Room 1: Pac-Man Ice Maze
-
-### Task
-
-The agent starts at `(0,0)` and must reach the exit at `(9,9)`. It has to move through a maze, avoid cracks and moving ghosts, and handle slippery ice tiles.
-
-### Algorithm
-
-I used Dynamic Programming with Value Iteration because the complete environment model is known. The algorithm can access all possible transitions, their probabilities, and their rewards.
-
-Value Iteration repeatedly updates the value of each state:
+The application flow is:
 
 ```text
-V(s) = max_a sum P(s'|s,a) * [reward + gamma * V(s')]
+Player Profile -> Campaign Dashboard -> Room
+Play Game | Train Agent | Episode Replay | Analytics | Room Specs
 ```
 
-The process stops when the largest value change is smaller than `theta`, or when it reaches the maximum number of iterations.
+## Room 1 - Pac-Man Ice Maze
 
-### State
+The agent starts at `(0,0)` and must reach `EXIT` at `(9,9)`. It has to avoid cracks and moving ghosts and handle slippery tiles.
 
-```text
-(row, col, collected_mask, ghost_phase)
-```
+- **Algorithm:** Dynamic Programming with Value Iteration.
+- **Model:** Known. The algorithm can use all transition probabilities and rewards.
+- **State:** `(row, col, collected_mask, ghost_phase)`.
+- **Actions:** `UP`, `RIGHT`, `DOWN`, `LEFT`.
+- **Final state:** The agent reaches `EXIT` with `ghost_phase=0`.
 
-`collected_mask` stays zero in this room. `ghost_phase` is included because the position of the moving ghosts affects the result of the next action.
-
-### Actions
-
-```text
-UP, RIGHT, DOWN, LEFT
-```
-
-### Final state
-
-The single final state is reaching `EXIT` at `(9,9)`.
-
-### Slippery tiles
-
-On a slippery tile, the requested action happens with probability `1-slip`. With the remaining probability, the action is redirected to the left or right.
-
-### Rewards
+On a slippery tile, the requested direction can change to the left or right. `ghost_phase` is included because the ghost positions affect the next transition.
 
 | Event | Reward |
 |---|---:|
 | Every step | `-1` |
 | Reach EXIT | `+110` |
-| Crack traps | `-22` or `-25` |
+| Crack | `-22` or `-25` |
 | Ghost collision | `-45` and return to start |
 
-### Parameters that worked well
+Best values I found:
 
 ```text
-gamma = 0.96
-theta = 0.0001
-slip_probability = 0.25
-max_iterations = 1000
-max_steps = 220
+gamma=0.96, theta=0.0001, slip=0.25
+max_iterations=1000, max_steps=220
 ```
 
-In my verification, all `12/12` stochastic policy rollouts succeeded, with an average of about 18 steps.
+All `12/12` policy rollouts succeeded in my verification.
 
-The manual Pac-Man game uses a real-time chasing system to make the game more interactive. The reinforcement-learning environment uses the deterministic `ghost_phase` transition cycle so the known model stays reproducible.
+## Room 2 - Sokoban Vault
 
-## Room 2: Sokoban Vault
+The agent must push the box from `(0,8)` to `TARGET` at `(0,9)`. It then has to avoid two moving laser patrols and reach `SAFE` at `(9,9)`.
 
-### Task
+- **Algorithm:** SARSA.
+- **Model:** Unknown. The agent learns only from sampled actions and rewards.
+- **State:** `(player_row, player_col, box_row, box_col, laser_phase)`.
+- **Actions:** `UP`, `RIGHT`, `DOWN`, `LEFT`.
+- **Final state:** The box is on `TARGET`, the player is in `SAFE`, and `laser_phase=0`.
 
-The agent must push the box from `(0,8)` onto the target at `(0,9)`. After the box is locked on the target, the player must time two moving laser patrols and reach the safe at `(9,9)`.
-
-### Algorithm
-
-I used SARSA because the agent does not know the transition model. It learns only from the states and rewards returned by `env.step()`.
-
-SARSA is an on-policy algorithm. Its update uses the next action that the current epsilon-greedy policy actually chooses:
-
-```text
-Q(S,A) = Q(S,A) + alpha * [R + gamma*Q(S',A') - Q(S,A)]
-```
-
-### State
-
-```text
-(player_row, player_col, box_row, box_col, laser_phase)
-```
-
-The box position is part of the actual state. The environment checks whether the box can be pushed into the next tile, so it is a real Sokoban task and not only a visual object. `laser_phase` identifies the current position of the two moving laser gates. This keeps the process Markovian: the agent can distinguish states that have the same player and box positions but different laser threats.
-
-The lasers move along deterministic patrol cycles. During training and replay they advance once after every agent action. In the manual game they move continuously so the room feels active even while the player is standing still. Contact gives a penalty and sends the player back to the start, while the box stays in its current position.
-
-### Actions
-
-```text
-UP, RIGHT, DOWN, LEFT
-```
-
-### Final state
-
-The box must be on `TARGET`, the player must be in `SAFE`, and `laser_phase` is canonicalized to `0`. This gives the room one canonical terminal state.
-
-### Rewards
+The box position is part of the real environment state. `laser_phase` stores the current position of the moving lasers. This lets SARSA learn when it is safe to cross their paths. A laser hit returns the player to the start but does not reset the box.
 
 | Event | Reward |
 |---|---:|
@@ -181,322 +71,159 @@ The box must be on `TARGET`, the player must be in `SAFE`, and `laser_phase` is 
 | Box reaches TARGET | `+28` |
 | Box leaves TARGET | `-28` |
 | Reach SAFE after solving the box | `+130` |
-| Invalid push or blocked move | `-6` additional penalty |
-| Hit a moving laser | `-38` and return the player to START |
+| Invalid move or push | `-6` additional penalty |
+| Moving laser hit | `-38` and return to start |
 
-### Parameters that worked well
-
-```text
-episodes = 650
-max_steps = 250
-alpha = 0.15
-gamma = 0.96
-epsilon = 0.40
-epsilon_min = 0.03
-epsilon_decay = 0.993
-slip_probability = 0.18
-```
-
-In my verification after adding the moving laser phase, the final `50/50` episodes succeeded, with an average of about 23.74 steps. The learned task is slightly harder because the agent must now time two moving hazards instead of avoiding fixed laser tiles.
-
-## Room 3: Bomberman Reactor
-
-### Task
-
-The agent must collect two CORE items, avoid bombs and moving patrol bots, use the WARP tunnel when useful, and then reach the GATE.
-
-### Algorithm
-
-I used Q-Learning because the environment model is unknown. Q-Learning is off-policy: the behavior still uses epsilon-greedy exploration, but the update target uses the best estimated next action.
+Best values I found:
 
 ```text
-Q(S,A) = Q(S,A) + alpha * [R + gamma*max Q(S',a) - Q(S,A)]
+episodes=650, max_steps=250, alpha=0.15, gamma=0.96
+epsilon=0.40, epsilon_min=0.03, epsilon_decay=0.993, slip=0.18
 ```
 
-### State
+The last `50/50` episodes succeeded, with about `23.74` steps on average.
 
-```text
-(row, col, core_mask, guard_phase)
-```
+## Room 3 - Bomberman Reactor
 
-`core_mask` stores which CORE items were already collected. `guard_phase` stores the movement phase of the patrol bots.
+The agent must collect two `CORE` items, avoid bombs and patrol bots, use the `WARP` tunnel when useful, and reach `GATE`.
 
-### Actions
+- **Algorithm:** Q-Learning.
+- **Model:** Unknown.
+- **State:** `(row, col, core_mask, guard_phase)`.
+- **Actions:** `UP`, `RIGHT`, `DOWN`, `LEFT`.
+- **Final state:** Both cores are collected and the agent reaches `GATE`.
 
-```text
-UP, RIGHT, DOWN, LEFT
-```
-
-### Final state
-
-Both CORE items must be collected before the agent enters `GATE`.
-
-### Rewards
+`core_mask` stores the collected items, and `guard_phase` stores the positions of the moving guards.
 
 | Event | Reward |
 |---|---:|
 | Every step | `-1.2` |
-| Collect each CORE once | `+30` |
+| Collect a CORE | `+30` |
 | Reach GATE with both COREs | `+170` |
-| Bomb traps | `-26`, `-30`, or `-38` |
+| Bomb | `-26`, `-30`, or `-38` |
 | Patrol collision | `-60` and return to start |
 | Use WARP | `0` |
 
-The WARP reward is zero because I did not want the agent to earn an unlimited reward by moving through a portal loop.
+The WARP reward is zero so the agent cannot collect unlimited rewards from a portal loop.
 
-### Parameters that worked well
-
-```text
-episodes = 650
-max_steps = 850
-alpha = 0.15
-gamma = 0.96
-epsilon = 0.40
-epsilon_min = 0.03
-epsilon_decay = 0.993
-slip_probability = 0.18
-```
-
-In my verification, the final `50/50` episodes succeeded, with an average of about 71.68 steps.
-
-## Room 4: Lunar Lander Pad
-
-### Task
-
-The fourth room is not based on a grid. The agent moves through a continuous `10x10` meter area, avoids asteroid fields, and tries to reach the landing pad.
-
-### Algorithm
-
-I used linear Approximate Q-Learning. A normal Q-table is not practical here because `X` and `Y` are continuous and can have a very large number of possible values.
-
-The approximation uses:
+Best values I found:
 
 ```text
-Q(s,a) = sum weights(a,i) * features(s,i)
+episodes=650, max_steps=850, alpha=0.15, gamma=0.96
+epsilon=0.40, epsilon_min=0.03, epsilon_decay=0.993, slip=0.18
 ```
 
-The features include normalized position, direction and distance to the goal, discrete velocity, and six offset tile codings.
+The last `50/50` episodes succeeded in my verification.
 
-### State
+## Room 4 - Lunar Lander Pad
 
-```text
-(X, Y, Vx, Vy)
-```
+This room is not a grid. The agent moves through a continuous `10x10` meter area, avoids asteroid fields, and reaches the landing pad.
 
-### Actions and movement
+- **Algorithm:** Linear Approximate Q-Learning.
+- **Model:** Unknown.
+- **State:** `(X, Y, Vx, Vy)`.
+- **Actions:** Nine velocity pairs where `Vx,Vy` are in `{-1,0,1}`.
+- **Time step:** `0.02` seconds.
+- **Final state:** The agent reaches `PAD`, and the final velocity is `(0,0)`.
 
-`Vx` and `Vy` can each be `-1`, `0`, or `1`, so the agent has nine actions. Position is continuous, but velocity is discrete.
-
-The agent chooses a new velocity every `0.02` seconds:
-
-```text
-X_new = X + Vx * speed * 0.02
-Y_new = Y + Vy * speed * 0.02
-```
-
-### Final state
-
-The agent must enter the goal radius around `PAD`. When it succeeds, the environment returns the exact goal position with `Vx=0` and `Vy=0`.
-
-### Rewards
+A regular Q-table is not practical because `X` and `Y` are continuous. I use normalized position, goal distance, velocity, and tile-coding features to approximate the Q-value.
 
 | Event | Reward |
 |---|---:|
 | Every time step | `-0.015` |
-| Progress toward PAD | `5 * (old_distance - new_distance)` |
+| Progress toward PAD | `5 * distance improvement` |
 | Reach PAD | `+55` |
 | Wall collision | `-0.6` |
 | Asteroid collision | `-2.5` and velocity reset |
 
-The progress reward helps the agent learn before it reaches the final state. The step penalty still encourages a shorter solution.
-
-### Parameters that worked well
+Best values I found:
 
 ```text
-episodes = 450
-max_steps = 850
-alpha = 0.08
-gamma = 0.985
-epsilon = 0.40
-epsilon_min = 0.03
-epsilon_decay = 0.993
+episodes=450, max_steps=850, alpha=0.08, gamma=0.985
+epsilon=0.40, epsilon_min=0.03, epsilon_decay=0.993
 ```
 
-With all five asteroid fields enabled, `37/50` of the final episodes succeeded. The average was about 714.36 time steps.
+In my verification, `37/50` of the final episodes succeeded with all five asteroid fields enabled.
 
-## Room 5: Portal Hazard Run
+## Room 5 - Portal Hazard Run
 
-### Task
+This is the optional and hardest room. The agent must reach `EXIT` while moving portal hazards cross the room. The agent can only observe the nearest obstacle in front of it within a selected distance.
 
-This is the optional and hardest room. The agent must reach the exit while avoiding moving portal hazards. The number and position of the obstacles change, and the agent can only observe a limited distance in front of it. Unlike the Pac-Man ghosts, a portal does not chase the player or send it back to the start. Contact gives a penalty and teleports the player to another random safe position.
+- **Algorithm:** Approximate Q-Learning.
+- **State:** `(X, Y, Vx, Vy, obstacle_dx, obstacle_dy, visible)`.
+- **Obstacle width:** `0.5` meters.
+- **Default obstacle count:** `7`, configurable from 2 to 15.
+- **Observation range:** Configurable from 1 to 6 meters.
+- **Final state:** The agent reaches `EXIT`.
 
-### Algorithm
-
-I used Approximate Q-Learning again, but this time the feature vector also includes information about the nearest visible obstacle.
-
-### State
-
-```text
-(X, Y, Vx, Vy, obstacle_dx, obstacle_dy, visible)
-```
-
-`obstacle_dx` and `obstacle_dy` describe the nearest obstacle in front of the agent, normalized by the observation range. `visible` is `1` when an obstacle is visible and `0` otherwise.
-
-### Obstacles
-
-| Property | Value |
-|---|---|
-| Width | `0.5` meters |
-| Default count | `7`, configurable from 2 to 15 |
-| Default observation range | `3` meters, configurable from 1 to 6 |
-| Position | Randomized when the room is reset |
-| Movement | Horizontal or vertical |
-| Collision | Penalty and teleport to a random safe position |
-
-The distance is measured from the center of the player to the center of the obstacle. Only the nearest obstacle in front of the current heading is added to the observation.
-
-### Final state
-
-The agent must reach `EXIT` without being sent back by a moving portal.
-
-### Rewards
+Portal contact gives a penalty and teleports the agent to a random safe position. After training, I can test the learned policy in a new random room with a different seed.
 
 | Event | Reward |
 |---|---:|
 | Every time step | `-0.015` |
-| Progress toward EXIT | `4.5 * (old_distance - new_distance)` |
+| Progress toward EXIT | `4.5 * distance improvement` |
 | Reach EXIT | `+45` |
-| Moving portal collision | `-8`, random safe teleport, and velocity reset |
+| Moving portal collision | `-8`, random teleport, and velocity reset |
 | Static hazard collision | `-2.5` |
 | Wall collision | `-0.6` |
 
-### Parameters that worked well
+Best values I found:
 
 ```text
-episodes = 450
-max_steps = 1400
-alpha = 0.08
-gamma = 0.985
-epsilon = 0.40
-epsilon_min = 0.03
-epsilon_decay = 0.993
-obstacle_count = 7
-observation_range = 3.0
+episodes=450, max_steps=1400, alpha=0.08, gamma=0.985
+epsilon=0.40, epsilon_min=0.03, epsilon_decay=0.993
+obstacle_count=7, observation_range=3.0
 ```
 
-With the random-teleport mechanic enabled, `49/50` of the final episodes succeeded in my verification. The successful episodes averaged about 659.65 steps, and the final 50 episodes had a mean reward of 83.95. The room is still challenging because the obstacle layout, portal motion, teleport destination, and observation are changing.
+The last `49/50` episodes succeeded in my verification.
 
-After training, the Replay tab can create a new random room using a different seed and test the learned policy without additional training.
+## Training and optimization
 
-## Important hyperparameters
+The important parameters are:
 
-- `seed`: controls randomness and makes an experiment reproducible.
 - `episodes`: number of complete training attempts.
-- `max_steps`: maximum actions allowed in one episode.
-- `alpha`: learning rate and update strength.
+- `max_steps`: maximum actions in one episode.
+- `alpha`: learning rate.
 - `gamma`: importance of future rewards.
-- `epsilon`: initial probability of choosing a random action.
-- `epsilon_min`: minimum exploration probability.
-- `epsilon_decay`: how quickly exploration decreases.
-- `slip_probability`: movement noise on slippery tiles.
-- `theta`: Value Iteration convergence threshold.
-- `observation_range`: how far Room 5 can observe obstacles.
+- `epsilon`: probability of a random exploratory action.
+- `epsilon_decay`: how exploration decreases during training.
+- `seed`: makes experiments reproducible.
+- `theta`: convergence threshold for Value Iteration.
 
-## Hyperparameter optimization
+`Start training` uses the selected values. `Optimize and train` compares four candidate configurations and then trains the best one for the requested number of episodes. I treat these as the best experimental values I found, not a guaranteed mathematical global optimum.
 
-Every room has two training options:
+## Replay and analytics
 
-- `Start training` uses the values selected in the interface.
-- `Optimize and train` compares four candidate configurations and then performs a full training run with the best candidate.
+The application stores every episode from SARSA, Q-Learning, and Approximate Q-Learning. Value Iteration stores 12 policy rollouts because it uses model sweeps instead of training episodes.
 
-To keep optimization practical, the continuous-room candidates use short trial runs and do not record Replay frames. Room 5 evaluates up to 70 episodes per candidate. After a candidate is selected, the application runs the complete requested training and records every episode for Replay.
+The Replay tab can show successful or failed episodes, play or pause the agent, move one step at a time, and change the speed.
 
-The candidate score is based mainly on success rate, followed by total reward and solution length:
+The Analytics tab shows:
 
-```text
-score = success_rate * 10000 + mean_reward - mean_steps * 0.05
-```
-
-The selected values are experimental results that worked well in this project. I do not claim that they are a mathematical global optimum.
-
-The tuning comparison is saved under `runs/tuning/`.
-
-## Episode Replay
-
-SARSA, Q-Learning, and Approximate Q-Learning save every training episode. Value Iteration saves 12 stochastic policy rollouts because it converges through repeated sweeps rather than through training episodes.
-
-For every attempt, the project records:
-
-- Episode number.
-- Complete state sequence.
-- Actions.
-- Rewards at every step.
-- Total reward.
-- Number of steps.
-- Success or failure.
-- Epsilon value.
-- Moving-obstacle frames in Room 5.
-
-The Replay tab can filter successful or failed attempts, sort them, select any episode, play or pause it, move one step at a time, scrub the timeline, and change the playback speed.
-
-## Analytics and saved files
-
-The application shows:
-
-- Reward per episode.
-- Reward moving average over 25 episodes.
-- Steps per episode.
-- Moving success rate.
+- Reward and reward moving average over 25 episodes.
+- Steps and recent success rate.
 - Epsilon during training.
-- TD error for Approximate Q-Learning.
-- Convergence delta and start-state value for Value Iteration.
+- TD error for function approximation.
+- Convergence delta for Value Iteration.
 
-Every completed run creates a directory under `runs/` containing:
+Completed runs save CSV, JSON, and PNG reports under `runs/`.
 
-```text
-metrics.csv
-attempts.csv
-parameters.json
-summary.json
-learning_report.png
-```
+## Run locally
 
-## Project structure
-
-```text
-app.py                         Streamlit interface, game Canvas, training, replay, and analytics
-escape_room/envs.py            Environment states, transitions, rewards, and obstacles
-escape_room/algorithms.py      Value Iteration, SARSA, Q-Learning, and Approximate Q-Learning
-escape_room/replay.py          Episode filtering and replay-library data
-static/game_art/               Game backgrounds, thumbnails, and banners
-tests/test_requirements.py     Automated requirement tests
-.streamlit/config.toml         Streamlit theme and static-file settings
-requirements.txt               Python dependencies
-runtime.txt                    Python version for Streamlit Cloud
-```
-
-## Running the project locally
-
-Create or activate a Python environment, then run:
+Python 3.11 is recommended.
 
 ```bash
 python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-Open the application at:
+Open [http://localhost:8501](http://localhost:8501).
 
-```text
-http://localhost:8501
-```
-
-## Running the tests
+Run the automated tests with:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
-
-The tests check the main project requirements, including the grid sizes, slippery cells, known transition model, Sokoban behavior, final states, continuous dynamics, obstacle width, observation state, replay library, and packaged game artwork.
 
 ## Publishing with Streamlit Community Cloud
 
@@ -510,6 +237,17 @@ Live application: [RL Escape Rooms](https://rl-escape-rooms.streamlit.app/)
 
 The project does not require API keys or other secrets.
 
-## Final summary
+## Main files
 
-This project starts with planning in a known model, continues with tabular model-free learning, and then moves to continuous state spaces and function approximation. Building the five rooms helped me understand that choosing the state, reward function, exploration strategy, and hyperparameters is just as important as choosing the reinforcement-learning algorithm itself.
+```text
+app.py                     Streamlit interface, games, training, replay, and analytics
+escape_room/envs.py        Environment states, transitions, and rewards
+escape_room/algorithms.py  Value Iteration, SARSA, Q-Learning, and Approximate Q-Learning
+escape_room/replay.py      Episode replay data and filters
+static/game_art/           Backgrounds, thumbnails, and banners
+tests/                     Automated project tests
+```
+
+## What I learned
+
+This project helped me understand the difference between planning with a known model, on-policy and off-policy learning, and function approximation. I also learned that the state representation, reward design, exploration schedule, and hyperparameters can be just as important as the algorithm itself.
