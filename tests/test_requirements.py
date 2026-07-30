@@ -39,6 +39,12 @@ class ProjectRequirementTests(unittest.TestCase):
         self.assertIn('[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p', app_source)
         self.assertIn("-webkit-text-fill-color: #eef2f7 !important", app_source)
 
+    def test_streamlit_hot_reload_handles_the_new_laser_config(self):
+        app_source = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
+        self.assertIn('"laser_cycles" not in getattr', app_source)
+        self.assertIn("importlib.reload(_envs_module)", app_source)
+        self.assertIn('getattr(env.config, "laser_cycles", ())', app_source)
+
     def test_episode_count_is_configurable_only_for_learning_rooms(self):
         app_source = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
         self.assertIn("EPISODE_CONTROLS", app_source)

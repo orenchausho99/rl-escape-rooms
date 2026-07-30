@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import html
+import importlib
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,18 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+
+import escape_room.envs as _envs_module
+
+_reloaded_environment_module = False
+if "laser_cycles" not in getattr(_envs_module.GridRoomConfig, "__dataclass_fields__", {}):
+    _envs_module = importlib.reload(_envs_module)
+    _reloaded_environment_module = True
+
+import escape_room.algorithms as _algorithms_module
+
+if _reloaded_environment_module:
+    _algorithms_module = importlib.reload(_algorithms_module)
 
 from escape_room.algorithms import (
     moving_average,
@@ -2216,7 +2229,10 @@ def arcade_payload(room_kind: str, replay_attempt: Dict[str, Any] | None = None)
                 "keys": [list(pos) for pos in env.config.keys],
                 "portals": [{"from": list(k), "to": list(v)} for k, v in env.config.portals.items()],
                 "guardCycles": [[list(pos) for pos in cycle] for cycle in env.config.guard_cycles],
-                "laserCycles": [[list(pos) for pos in cycle] for cycle in env.config.laser_cycles],
+                "laserCycles": [
+                    [list(pos) for pos in cycle]
+                    for cycle in getattr(env.config, "laser_cycles", ())
+                ],
                 "boxStart": list(env.config.box_start) if env.config.box_start is not None else None,
                 "boxTarget": list(env.config.box_target) if env.config.box_target is not None else None,
                 "slipProbability": env.config.slip_probability,
@@ -2225,7 +2241,7 @@ def arcade_payload(room_kind: str, replay_attempt: Dict[str, Any] | None = None)
                 "keyReward": env.config.key_reward,
                 "blockedGoalPenalty": env.config.blocked_goal_penalty,
                 "guardReward": env.config.guard_reward,
-                "laserReward": env.config.laser_reward,
+                "laserReward": getattr(env.config, "laser_reward", -38.0),
                 "portalReward": env.config.portal_reward,
                 "trapRewards": {f"{pos[0]},{pos[1]}": reward for pos, reward in env.config.traps.items()},
                 "labels": theme.get("labels", {}),
@@ -5548,7 +5564,10 @@ def render_details_tab(room_kind: str) -> None:
             "box_target": env.config.box_target,
             "portals": {str(source): target for source, target in env.config.portals.items()},
             "guard_cycles": [[list(position) for position in cycle] for cycle in env.config.guard_cycles],
-            "laser_cycles": [[list(position) for position in cycle] for cycle in env.config.laser_cycles],
+            "laser_cycles": [
+                [list(position) for position in cycle]
+                for cycle in getattr(env.config, "laser_cycles", ())
+            ],
         }
         environment_rows = [
             ("Representation", representation),
@@ -5563,7 +5582,9 @@ def render_details_tab(room_kind: str) -> None:
             ("Collect required item", env.config.key_reward),
             (
                 "Hit moving laser" if room_kind == "sarsa" else "Hit moving guard",
-                env.config.laser_reward if room_kind == "sarsa" else env.config.guard_reward,
+                getattr(env.config, "laser_reward", -38.0)
+                if room_kind == "sarsa"
+                else env.config.guard_reward,
             ),
             ("Use portal", env.config.portal_reward),
         ]
